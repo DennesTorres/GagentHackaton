@@ -33,7 +33,7 @@ def proxy_fabric_request(request: Request):
     """Main function entry point."""
     
     # --- Requirement 1: Proxy Secret Validation ---
-    incoming_secret = request.headers.get("X-Proxy-Secret")
+    incoming_secret = request.args.get("secret")
     if not PROXY_SECRET or incoming_secret != PROXY_SECRET:
         return Response("Unauthorized: Invalid or missing X-Proxy-Secret", status=401)
 
