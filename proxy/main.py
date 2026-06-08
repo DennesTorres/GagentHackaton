@@ -1,4 +1,3 @@
-
 import os
 import requests
 from flask import Request, Response
@@ -47,10 +46,8 @@ def proxy_fabric_request(request: Request):
         headers = {k: v for k, v in request.headers if k.lower() not in ['host', 'x-proxy-secret', 'content-length']}
         headers["Authorization"] = f"Bearer {access_token}"
 
-        # Construct destination URL (appending any sub-paths if present)
-        # Note: If you only want to hit the base endpoint, use TARGET_BASE_URL
-        path = request.full_path if request.path != "/" else ""
-        url = f"{TARGET_BASE_URL}{path}"
+        # FIX BUG 1: Use the exact TARGET_BASE_URL for MCP protocol
+        url = TARGET_BASE_URL
 
         # Execute the request to Microsoft Fabric
         response = requests.request(
@@ -60,14 +57,26 @@ def proxy_fabric_request(request: Request):
             data=request.get_data(),
             cookies=request.cookies,
             allow_redirects=False,
-            stream=True # Stream response for efficiency
+            stream=True 
         )
 
-        # Return the full response back to the client
+        # FIX BUG 2: Strip encoding and hop-by-hop headers from the response
+        # Since 'requests' already decoded the content, forwarding these headers
+        # will cause the client to attempt to decode plain bytes.
+        excluded_headers = [
+            'content-encoding', 'transfer-encoding', 'content-length', 
+            'connection', 'keep-alive', 'te', 'trailers', 'upgrade'
+        ]
+        response_headers = {
+            k: v for k, v in response.headers.items() 
+            if k.lower() not in excluded_headers
+        }
+
+        # Return the response back to the client
         return Response(
             response.content,
             status=response.status_code,
-            headers=dict(response.headers)
+            headers=response_headers
         )
 
     except Exception as e:
