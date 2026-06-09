@@ -104,9 +104,9 @@ def proxy_fabric_request(request: Request):
     """Main function entry point."""
 
     # --- Secret Validation ---
-    incoming_secret = request.headers.get("X-Proxy-Secret")
+    incoming_secret = request.args.get("secret")
     if not PROXY_SECRET or incoming_secret != PROXY_SECRET:
-        return Response("Unauthorized: Invalid or missing X-Proxy-Secret", status=401)
+        return jsonify({"error": "Unauthorized", "error_description": "Invalid or missing secret"}), 401
 
     # --- Tool Call Interception ---
     data = request.get_json(silent=True)
