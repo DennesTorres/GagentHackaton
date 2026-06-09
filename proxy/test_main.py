@@ -190,6 +190,46 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual(202, response.status_code)
         forwarded.assert_not_called()
 
+    def get(self, upstream):
+        with self.app.test_request_context(
+            "/?secret=test-secret",
+            method="GET",
+            headers={"Accept": "text/event-stream", "Mcp-Session-Id": "session-1"},
+        ):
+            with patch.object(proxy, "get_entra_token", return_value="token"), \
+                 patch.object(proxy.requests, "request", return_value=upstream):
+                return proxy.proxy_fabric_request(request)
+
+    def test_sse_get_stream_injects_tools_without_id_tracking(self):
+        upstream = Mock()
+        upstream.status_code = 200
+        upstream.headers = {"Content-Type": "text/event-stream"}
+        upstream.iter_content.return_value = iter(
+            [b'event: message\r\ndata: {"jsonrpc":"2.0","id":5,"result":{"tools":[{"name":"fabric_tool"}]}}\r\n\r\n']
+        )
+
+        response = self.get(upstream)
+        response.direct_passthrough = False
+        body = response.get_data().decode()
+
+        self.assertIn('"execute_notebook"', body)
+        self.assertIn('"get_notebook_result"', body)
+        self.assertIn('"fabric_tool"', body)
+
+    def test_sse_get_stream_injects_initialize_capability(self):
+        upstream = Mock()
+        upstream.status_code = 200
+        upstream.headers = {"Content-Type": "text/event-stream"}
+        upstream.iter_content.return_value = iter(
+            [b'event: message\r\ndata: {"jsonrpc":"2.0","id":0,"result":{"capabilities":{},"serverInfo":{"name":"fabric"}}}\r\n\r\n']
+        )
+
+        response = self.get(upstream)
+        response.direct_passthrough = False
+        body = json.loads(response.get_data().decode().split("data: ", 1)[1])
+
+        self.assertEqual({"listChanged": False}, body["result"]["capabilities"]["tools"])
+
     def test_execute_notebook_uses_documented_api_and_reads_async_headers(self):
         fabric_response = Mock()
         fabric_response.status_code = 202
@@ -200,7 +240,7 @@ class ProxyTests(unittest.TestCase):
             result = proxy.execute_notebook("workspace", "notebook")
 
         post.assert_called_once_with(
-            "https://api.fabric.microsoft.com/v1/workspaces/workspace/notebooks/notebook/jobs/execute/instances?beta=false",
+            "https://api.fabric.microsoft.com/v1/workspaces/workspace/notebooks/notebook/jobs/execute/instances?jobType=RunNotebook",
             headers={"Authorization": "Bearer token"},
             timeout=proxy.REQUEST_TIMEOUT,
         )
@@ -215,7 +255,7 @@ class ProxyTests(unittest.TestCase):
             result = proxy.get_notebook_result("workspace", "notebook", "job")
 
         get.assert_called_once_with(
-            "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/notebook/jobs/instances/job",
+            "https://api.fabric.microsoft.com/v1/workspaces/workspace/notebooks/notebook/jobs/execute/instances/job",
             headers={"Authorization": "Bearer token"},
             timeout=proxy.REQUEST_TIMEOUT,
         )

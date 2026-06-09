@@ -98,7 +98,7 @@ def execute_notebook(workspaceId: str, notebookId: str):
     """Start a notebook execution and return the asynchronous job metadata."""
     url = (
         f"{FABRIC_API_BASE_URL}/workspaces/{workspaceId}/notebooks/{notebookId}"
-        "/jobs/execute/instances?beta=false"
+        "/jobs/execute/instances?jobType=RunNotebook"
     )
     response = requests.post(url, headers=_fabric_headers(), timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
@@ -112,8 +112,8 @@ def execute_notebook(workspaceId: str, notebookId: str):
 def get_notebook_result(workspaceId: str, notebookId: str, jobInstanceId: str):
     """Get one notebook job instance."""
     url = (
-        f"{FABRIC_API_BASE_URL}/workspaces/{workspaceId}/items/{notebookId}"
-        f"/jobs/instances/{jobInstanceId}"
+        f"{FABRIC_API_BASE_URL}/workspaces/{workspaceId}/notebooks/{notebookId}"
+        f"/jobs/execute/instances/{jobInstanceId}"
     )
     response = requests.get(url, headers=_fabric_headers(), timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
@@ -187,7 +187,7 @@ def _is_local_tool_call(message):
     )
 
 
-def _tools_list_request_ids(payload):
+def _cursor_page_request_ids(payload):
     messages = payload if isinstance(payload, list) else [payload]
     return {
         message.get("id")
@@ -195,30 +195,19 @@ def _tools_list_request_ids(payload):
         if (
             isinstance(message, dict)
             and message.get("method") == "tools/list"
-            and (
-                not isinstance(message.get("params"), dict)
-                or not message["params"].get("cursor")
-            )
+            and isinstance(message.get("params"), dict)
+            and message["params"].get("cursor")
         )
     }
 
 
-def _initialize_request_ids(payload):
-    messages = payload if isinstance(payload, list) else [payload]
-    return {
-        message.get("id")
-        for message in messages
-        if isinstance(message, dict) and message.get("method") == "initialize"
-    }
-
-
-def _inject_local_capabilities(payload, initialize_ids):
+def _inject_local_capabilities(payload):
     responses = payload if isinstance(payload, list) else [payload]
     for response in responses:
-        if not isinstance(response, dict) or response.get("id") not in initialize_ids:
+        if not isinstance(response, dict):
             continue
         result = response.get("result")
-        if not isinstance(result, dict):
+        if not isinstance(result, dict) or "serverInfo" not in result:
             continue
         capabilities = result.setdefault("capabilities", {})
         if isinstance(capabilities, dict):
@@ -226,14 +215,16 @@ def _inject_local_capabilities(payload, initialize_ids):
     return payload
 
 
-def _inject_local_tools(payload, tools_list_ids, initialize_ids=frozenset()):
-    _inject_local_capabilities(payload, initialize_ids)
+def _inject_local_tools(payload, cursor_page_ids):
+    _inject_local_capabilities(payload)
     responses = payload if isinstance(payload, list) else [payload]
     for response in responses:
-        if not isinstance(response, dict) or response.get("id") not in tools_list_ids:
+        if not isinstance(response, dict):
             continue
         result = response.get("result")
         if not isinstance(result, dict) or not isinstance(result.get("tools"), list):
+            continue
+        if cursor_page_ids and response.get("id") in cursor_page_ids:
             continue
         existing_names = {
             tool.get("name") for tool in result["tools"] if isinstance(tool, dict)
@@ -262,16 +253,16 @@ def _response_headers(upstream_headers):
     }
 
 
-def _rewrite_sse_events(chunks: Iterable[bytes], tools_list_ids, initialize_ids, local_responses):
+def _rewrite_sse_events(chunks: Iterable[bytes], cursor_page_ids, local_responses):
     buffer = b""
     try:
         for chunk in chunks:
             buffer = (buffer + chunk).replace(b"\r\n", b"\n")
             while b"\n\n" in buffer:
                 event, buffer = buffer.split(b"\n\n", 1)
-                yield _rewrite_sse_event(event, tools_list_ids, initialize_ids) + b"\n\n"
+                yield _rewrite_sse_event(event, cursor_page_ids) + b"\n\n"
         if buffer:
-            yield _rewrite_sse_event(buffer, tools_list_ids, initialize_ids)
+            yield _rewrite_sse_event(buffer, cursor_page_ids)
         for response in local_responses:
             yield f"event: message\ndata: {json.dumps(response)}\n\n".encode()
     finally:
@@ -280,14 +271,14 @@ def _rewrite_sse_events(chunks: Iterable[bytes], tools_list_ids, initialize_ids,
             close()
 
 
-def _rewrite_sse_event(event, tools_list_ids, initialize_ids):
+def _rewrite_sse_event(event, cursor_page_ids):
     lines = event.splitlines()
     data_lines = [line[5:].lstrip() for line in lines if line.startswith(b"data:")]
     if not data_lines:
         return event
     try:
         payload = json.loads(b"\n".join(data_lines))
-        rewritten = json.dumps(_inject_local_tools(payload, tools_list_ids, initialize_ids)).encode()
+        rewritten = json.dumps(_inject_local_tools(payload, cursor_page_ids)).encode()
     except (TypeError, ValueError):
         return event
     other_lines = [line for line in lines if not line.startswith(b"data:")]
@@ -305,8 +296,7 @@ def _json_response(payload, status, headers):
 
 
 def _proxy_upstream(request, payload, local_responses):
-    tools_list_ids = _tools_list_request_ids(payload)
-    initialize_ids = _initialize_request_ids(payload)
+    cursor_page_ids = _cursor_page_request_ids(payload) if payload is not None else set()
     upstream = requests.request(
         method=request.method,
         url=TARGET_BASE_URL,
@@ -321,7 +311,7 @@ def _proxy_upstream(request, payload, local_responses):
 
     if "application/json" in content_type:
         try:
-            result = _inject_local_tools(upstream.json(), tools_list_ids, initialize_ids)
+            result = _inject_local_tools(upstream.json(), cursor_page_ids)
             if local_responses:
                 result = result if isinstance(result, list) else [result]
                 result.extend(local_responses)
@@ -339,8 +329,7 @@ def _proxy_upstream(request, payload, local_responses):
 
         body = _rewrite_sse_events(
             upstream_sse_chunks(),
-            tools_list_ids,
-            initialize_ids,
+            cursor_page_ids,
             local_responses,
         )
         return Response(
