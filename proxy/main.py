@@ -302,7 +302,7 @@ def _proxy_upstream(request, payload, local_responses):
         url=TARGET_BASE_URL,
         headers=_forward_headers(request.headers),
         data=json.dumps(payload).encode() if payload is not None else request.get_data(),
-        allow_redirects=False,
+        allow_redirects=True,
         stream=True,
         timeout=REQUEST_TIMEOUT,
     )
