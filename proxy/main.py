@@ -1,6 +1,6 @@
 import os
 import requests
-from flask import Request, Response
+from flask import Request, Response, jsonify
 from msal import ConfidentialClientApplication
 
 # 1. Load configuration from environment variables
@@ -32,6 +32,11 @@ def get_entra_token():
 def proxy_fabric_request(request: Request):
     """Main function entry point."""
     
+    if request.path == '/execute-notebook':
+        return execute_notebook(request)
+    elif request.path == '/notebook-result':
+        return get_notebook_result(request)
+
     # --- Requirement 1: Proxy Secret Validation ---
     incoming_secret = request.args.get("secret")
     if not PROXY_SECRET or incoming_secret != PROXY_SECRET:
@@ -79,6 +84,78 @@ def proxy_fabric_request(request: Request):
             headers=response_headers
         )
 
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return Response(f"Internal Server Error: {str(e)}", status=500)
+
+def execute_notebook(request: Request):
+    """Execute a notebook in Microsoft Fabric."""
+    
+    incoming_secret = request.headers.get("X-Proxy-Secret")
+    if not PROXY_SECRET or incoming_secret != PROXY_SECRET:
+        return Response("Unauthorized: Invalid or missing X-Proxy-Secret", status=401)
+        
+    try:
+        access_token = get_entra_token()
+        
+        data = request.get_json()
+        workspace_id = data.get("workspaceId")
+        notebook_id = data.get("notebookId")
+        
+        if not workspace_id or not notebook_id:
+            return Response("Missing workspaceId or notebookId in request body", status=400)
+            
+        url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items/{notebook_id}/jobs/instances"
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        body = {
+            "executionData": {
+                "configuration": {
+                    "jobType": "RunNotebook"
+                }
+            }
+        }
+        
+        response = requests.post(url, headers=headers, json=body)
+        response.raise_for_status()
+        
+        return jsonify(response.json())
+        
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return Response(f"Internal Server Error: {str(e)}", status=500)
+
+def get_notebook_result(request: Request):
+    """Get the result of a notebook execution."""
+    
+    incoming_secret = request.headers.get("X-Proxy-Secret")
+    if not PROXY_SECRET or incoming_secret != PROXY_SECRET:
+        return Response("Unauthorized: Invalid or missing X-Proxy-Secret", status=401)
+        
+    try:
+        access_token = get_entra_token()
+        
+        workspace_id = request.args.get("workspaceId")
+        job_instance_id = request.args.get("jobInstanceId")
+        
+        if not workspace_id or not job_instance_id:
+            return Response("Missing workspaceId or jobInstanceId in query parameters", status=400)
+            
+        url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/jobScheduler/jobs/{job_instance_id}"
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        return jsonify(response.json())
+        
     except Exception as e:
         print(f"Error: {str(e)}")
         return Response(f"Internal Server Error: {str(e)}", status=500)
