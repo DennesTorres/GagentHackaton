@@ -1,6 +1,5 @@
 import json
 import os
-from collections.abc import Iterable
 
 import requests
 from flask import Request, Response, jsonify, stream_with_context
@@ -187,36 +186,7 @@ def _is_local_tool_call(message):
     )
 
 
-def _cursor_page_request_ids(payload):
-    messages = payload if isinstance(payload, list) else [payload]
-    return {
-        message.get("id")
-        for message in messages
-        if (
-            isinstance(message, dict)
-            and message.get("method") == "tools/list"
-            and isinstance(message.get("params"), dict)
-            and message["params"].get("cursor")
-        )
-    }
-
-
-def _inject_local_capabilities(payload):
-    responses = payload if isinstance(payload, list) else [payload]
-    for response in responses:
-        if not isinstance(response, dict):
-            continue
-        result = response.get("result")
-        if not isinstance(result, dict) or "serverInfo" not in result:
-            continue
-        capabilities = result.setdefault("capabilities", {})
-        if isinstance(capabilities, dict):
-            capabilities.setdefault("tools", {"listChanged": False})
-    return payload
-
-
-def _inject_local_tools(payload, cursor_page_ids):
-    _inject_local_capabilities(payload)
+def _inject_local_tools(payload):
     responses = payload if isinstance(payload, list) else [payload]
     for response in responses:
         if not isinstance(response, dict):
@@ -224,7 +194,7 @@ def _inject_local_tools(payload, cursor_page_ids):
         result = response.get("result")
         if not isinstance(result, dict) or not isinstance(result.get("tools"), list):
             continue
-        if cursor_page_ids and response.get("id") in cursor_page_ids:
+        if result.get("nextCursor"):
             continue
         existing_names = {
             tool.get("name") for tool in result["tools"] if isinstance(tool, dict)
@@ -253,38 +223,6 @@ def _response_headers(upstream_headers):
     }
 
 
-def _rewrite_sse_events(chunks: Iterable[bytes], cursor_page_ids, local_responses):
-    buffer = b""
-    try:
-        for chunk in chunks:
-            buffer = (buffer + chunk).replace(b"\r\n", b"\n")
-            while b"\n\n" in buffer:
-                event, buffer = buffer.split(b"\n\n", 1)
-                yield _rewrite_sse_event(event, cursor_page_ids) + b"\n\n"
-        if buffer:
-            yield _rewrite_sse_event(buffer, cursor_page_ids)
-        for response in local_responses:
-            yield f"event: message\ndata: {json.dumps(response)}\n\n".encode()
-    finally:
-        close = getattr(chunks, "close", None)
-        if close:
-            close()
-
-
-def _rewrite_sse_event(event, cursor_page_ids):
-    lines = event.splitlines()
-    data_lines = [line[5:].lstrip() for line in lines if line.startswith(b"data:")]
-    if not data_lines:
-        return event
-    try:
-        payload = json.loads(b"\n".join(data_lines))
-        rewritten = json.dumps(_inject_local_tools(payload, cursor_page_ids)).encode()
-    except (TypeError, ValueError):
-        return event
-    other_lines = [line for line in lines if not line.startswith(b"data:")]
-    return b"\n".join(other_lines + [b"data: " + rewritten])
-
-
 def _json_response(payload, status, headers):
     headers = {key: value for key, value in headers.items() if key.lower() != "content-type"}
     headers["Content-Type"] = "application/json"
@@ -296,7 +234,6 @@ def _json_response(payload, status, headers):
 
 
 def _proxy_upstream(request, payload, local_responses):
-    cursor_page_ids = _cursor_page_request_ids(payload) if payload is not None else set()
     upstream = requests.request(
         method=request.method,
         url=TARGET_BASE_URL,
@@ -311,7 +248,7 @@ def _proxy_upstream(request, payload, local_responses):
 
     if "application/json" in content_type:
         try:
-            result = _inject_local_tools(upstream.json(), cursor_page_ids)
+            result = _inject_local_tools(upstream.json())
             if local_responses:
                 result = result if isinstance(result, list) else [result]
                 result.extend(local_responses)
@@ -319,25 +256,6 @@ def _proxy_upstream(request, payload, local_responses):
             return _json_response(result, upstream.status_code, headers)
         except (TypeError, ValueError):
             pass
-
-    if "text/event-stream" in content_type:
-        def upstream_sse_chunks():
-            try:
-                yield from upstream.iter_content(chunk_size=8192)
-            finally:
-                upstream.close()
-
-        body = _rewrite_sse_events(
-            upstream_sse_chunks(),
-            cursor_page_ids,
-            local_responses,
-        )
-        return Response(
-            stream_with_context(body),
-            status=upstream.status_code,
-            headers=headers,
-            direct_passthrough=True,
-        )
 
     if local_responses:
         upstream.close()

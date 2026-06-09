@@ -54,46 +54,18 @@ class ProxyTests(unittest.TestCase):
         self.assertNotIn("function", body["result"]["tools"][1])
         self.assertEqual("new-session", response.headers["Mcp-Session-Id"])
 
-    def test_tools_list_cursor_page_does_not_duplicate_local_tools(self):
+    def test_tools_list_non_final_page_does_not_inject_local_tools(self):
         upstream = self.upstream_json(
-            {"jsonrpc": "2.0", "id": 14, "result": {"tools": [{"name": "second_page_tool"}]}}
+            {"jsonrpc": "2.0", "id": 14, "result": {"tools": [{"name": "second_page_tool"}], "nextCursor": "next-page"}}
         )
 
         response = self.post(
-            {"jsonrpc": "2.0", "id": 14, "method": "tools/list", "params": {"cursor": "next-page"}},
+            {"jsonrpc": "2.0", "id": 14, "method": "tools/list"},
             upstream,
         )
         body = json.loads(response.get_data())
 
         self.assertEqual(["second_page_tool"], [tool["name"] for tool in body["result"]["tools"]])
-
-    def test_initialize_advertises_local_tools_capability(self):
-        upstream = self.upstream_json(
-            {"jsonrpc": "2.0", "id": 10, "result": {"capabilities": {}, "serverInfo": {"name": "fabric"}}}
-        )
-        response = self.post({"jsonrpc": "2.0", "id": 10, "method": "initialize", "params": {}}, upstream)
-        body = json.loads(response.get_data())
-
-        self.assertEqual({"listChanged": False}, body["result"]["capabilities"]["tools"])
-
-    def test_sse_tools_list_appends_local_tools(self):
-        upstream = Mock()
-        upstream.status_code = 200
-        upstream.headers = {"Content-Type": "text/event-stream", "Mcp-Session-Id": "session-2"}
-        upstream.iter_content.return_value = iter(
-            [
-                b'event: message\r\ndata: {"jsonrpc":"2.0","id":11,"result":{"tools":[]}}\r\n\r\n',
-            ]
-        )
-
-        response = self.post({"jsonrpc": "2.0", "id": 11, "method": "tools/list"}, upstream)
-        response.direct_passthrough = False
-        body = response.get_data().decode()
-
-        self.assertIn('"execute_notebook"', body)
-        self.assertIn('"get_notebook_result"', body)
-        self.assertEqual("session-2", response.headers["Mcp-Session-Id"])
-        upstream.close.assert_called_once()
 
     def test_local_tool_call_is_not_forwarded(self):
         with patch.object(proxy, "execute_notebook", return_value={"status": 202, "location": "job-url"}), patch.dict(
@@ -189,46 +161,6 @@ class ProxyTests(unittest.TestCase):
 
         self.assertEqual(202, response.status_code)
         forwarded.assert_not_called()
-
-    def get(self, upstream):
-        with self.app.test_request_context(
-            "/?secret=test-secret",
-            method="GET",
-            headers={"Accept": "text/event-stream", "Mcp-Session-Id": "session-1"},
-        ):
-            with patch.object(proxy, "get_entra_token", return_value="token"), \
-                 patch.object(proxy.requests, "request", return_value=upstream):
-                return proxy.proxy_fabric_request(request)
-
-    def test_sse_get_stream_injects_tools_without_id_tracking(self):
-        upstream = Mock()
-        upstream.status_code = 200
-        upstream.headers = {"Content-Type": "text/event-stream"}
-        upstream.iter_content.return_value = iter(
-            [b'event: message\r\ndata: {"jsonrpc":"2.0","id":5,"result":{"tools":[{"name":"fabric_tool"}]}}\r\n\r\n']
-        )
-
-        response = self.get(upstream)
-        response.direct_passthrough = False
-        body = response.get_data().decode()
-
-        self.assertIn('"execute_notebook"', body)
-        self.assertIn('"get_notebook_result"', body)
-        self.assertIn('"fabric_tool"', body)
-
-    def test_sse_get_stream_injects_initialize_capability(self):
-        upstream = Mock()
-        upstream.status_code = 200
-        upstream.headers = {"Content-Type": "text/event-stream"}
-        upstream.iter_content.return_value = iter(
-            [b'event: message\r\ndata: {"jsonrpc":"2.0","id":0,"result":{"capabilities":{},"serverInfo":{"name":"fabric"}}}\r\n\r\n']
-        )
-
-        response = self.get(upstream)
-        response.direct_passthrough = False
-        body = json.loads(response.get_data().decode().split("data: ", 1)[1])
-
-        self.assertEqual({"listChanged": False}, body["result"]["capabilities"]["tools"])
 
     def test_execute_notebook_uses_documented_api_and_reads_async_headers(self):
         fabric_response = Mock()
