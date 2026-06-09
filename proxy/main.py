@@ -63,75 +63,76 @@ def get_entra_token():
         raise Exception(f"Could not acquire token: {result.get('error_description')}")
 
 def execute_notebook(workspaceId: str, notebookId: str):
-    """Execute a notebook in Microsoft Fabric."""
-    try:
-        access_token = get_entra_token()
-        url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspaceId}/items/{notebookId}/jobs/instances"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json"
-        }
-        body = {
-            "executionData": {
-                "configuration": {
-                    "jobType": "RunNotebook"
-                }
+    """Execute a notebook and return the JSON result as a dict."""
+    access_token = get_entra_token()
+    url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspaceId}/items/{notebookId}/jobs/instances"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    body = {
+        "executionData": {
+            "configuration": {
+                "jobType": "RunNotebook"
             }
         }
-        response = requests.post(url, headers=headers, json=body)
-        response.raise_for_status()
-        return jsonify(response.json())
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        return Response(f"Internal Server Error: {str(e)}", status=500)
+    }
+    response = requests.post(url, headers=headers, json=body)
+    response.raise_for_status()
+    return response.json()
 
 def get_notebook_result(workspaceId: str, jobInstanceId: str):
-    """Get the result of a notebook execution."""
-    try:
-        access_token = get_entra_token()
-        url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspaceId}/jobScheduler/jobs/{jobInstanceId}"
-        headers = {
-            "Authorization": f"Bearer {access_token}"
-        }
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return jsonify(response.json())
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        return Response(f"Internal Server Error: {str(e)}", status=500)
+    """Get notebook result and return the JSON result as a dict."""
+    access_token = get_entra_token()
+    url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspaceId}/jobScheduler/jobs/{jobInstanceId}"
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()
 
 def proxy_fabric_request(request: Request):
     """Main function entry point."""
-
     # --- Secret Validation ---
     incoming_secret = request.args.get("secret")
     if not PROXY_SECRET or incoming_secret != PROXY_SECRET:
-        return jsonify({"error": "Unauthorized", "error_description": "Invalid or missing secret"}), 401
+        return jsonify({"error": {"code": -32000, "message": "Invalid or missing secret"}}), 401
 
-    # --- Tool Call Interception ---
-    data = request.get_json(silent=True)
-    if data and "tool_run" in data:
-        tool_run = data["tool_run"]
-        tool_name = tool_run.get("tool_name")
-        args = tool_run.get("args", {})
+    request_data = request.get_json(silent=True)
+    request_id = request_data.get("id") if isinstance(request_data, dict) else None
 
-        if tool_name == "execute_notebook":
-            return execute_notebook(**args)
-        elif tool_name == "get_notebook_result":
-            return get_notebook_result(**args)
-
-    # If not a tool call, proceed with proxying
     try:
-        access_token = get_entra_token()
+        # --- Tool Call Interception ---
+        if request_data and "tool_run" in request_data:
+            tool_run = request_data["tool_run"]
+            tool_name = tool_run.get("tool_name")
+            args = tool_run.get("args", {})
 
+            tool_function = None
+            if tool_name == "execute_notebook":
+                tool_function = execute_notebook
+            elif tool_name == "get_notebook_result":
+                tool_function = get_notebook_result
+
+            if tool_function:
+                result_data = tool_function(**args)
+                # Per MCP protocol, tool result must be a string.
+                string_result = json.dumps(result_data)
+                return jsonify({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"tool_run_id": tool_run.get("tool_run_id"), "result": string_result}
+                })
+
+        # --- Default Proxying Logic ---
+        access_token = get_entra_token()
         headers = {k: v for k, v in request.headers if k.lower() not in ['host', 'x-proxy-secret', 'content-length']}
         headers["Authorization"] = f"Bearer {access_token}"
 
-        url = TARGET_BASE_URL
-
         response = requests.request(
             method=request.method,
-            url=url,
+            url=TARGET_BASE_URL,
             headers=headers,
             data=request.get_data(),
             cookies=request.cookies,
@@ -143,24 +144,27 @@ def proxy_fabric_request(request: Request):
             'content-encoding', 'transfer-encoding', 'content-length',
             'connection', 'keep-alive', 'te', 'trailers', 'upgrade'
         ]
-        response_headers = {
-            k: v for k, v in response.headers.items()
-            if k.lower() not in excluded_headers
-        }
+        response_headers = {k: v for k, v in response.headers.items() if k.lower() not in excluded_headers}
 
-        # --- Tool Spec Injection ---
+        # --- Surgical Tool Spec Injection ---
         if 'application/json' in response.headers.get('Content-Type', ''):
             try:
                 mcp_response_json = response.json()
-                if 'tool_specs' not in mcp_response_json:
-                    mcp_response_json['tool_specs'] = []
-                mcp_response_json['tool_specs'].extend(NOTEBOOK_TOOLS)
+                # Only inject if the response already has a tool_specs list
+                if isinstance(mcp_response_json.get('tool_specs'), list):
+                    mcp_response_json['tool_specs'].extend(NOTEBOOK_TOOLS)
                 return jsonify(mcp_response_json)
             except (ValueError, TypeError):
-                return Response(response.content, status=response.status_code, headers=response_headers)
-
+                # Not a JSON response, or not the structure we expected, so proxy as-is
+                pass
+        
         return Response(response.content, status=response.status_code, headers=response_headers)
 
     except Exception as e:
         print(f"Error: {str(e)}")
-        return Response(f"Internal Server Error: {str(e)}", status=500)
+        error_payload = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32603, "message": f"Internal Server Error: {str(e)}"}
+        }
+        return jsonify(error_payload), 500
