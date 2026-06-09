@@ -22,7 +22,7 @@ class ProxyTests(unittest.TestCase):
             "/?secret=test-secret",
             method="POST",
             json=payload,
-            headers={"Accept": "application/json, text/event-stream", "Mcp-Session-Id": "session-1"},
+            headers={"Accept": "application/json", "Mcp-Session-Id": "session-1"},
         ):
             patches = [patch.object(proxy, "get_entra_token", return_value="token")]
             if upstream is not None:
@@ -119,48 +119,6 @@ class ProxyTests(unittest.TestCase):
             upstream,
         )
         self.assertEqual(2, len(json.loads(response.get_data())[0]["result"]["tools"]))
-
-    def test_mixed_batch_combines_local_and_upstream_results(self):
-        upstream = self.upstream_json(
-            [{"jsonrpc": "2.0", "id": 12, "result": {"content": [{"type": "text", "text": "upstream"}]}}]
-        )
-        with patch.object(proxy, "execute_notebook", return_value={"status": 202}), patch.dict(
-            proxy.LOCAL_TOOL_HANDLERS, {"execute_notebook": proxy.execute_notebook}
-        ):
-            response = self.post(
-                [
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 13,
-                        "method": "tools/call",
-                        "params": {"name": "execute_notebook", "arguments": {"workspaceId": "w", "notebookId": "n"}},
-                    },
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 12,
-                        "method": "tools/call",
-                        "params": {"name": "upstream_tool", "arguments": {}},
-                    },
-                ],
-                upstream,
-            )
-
-        self.assertEqual({12, 13}, {item["id"] for item in json.loads(response.get_data())})
-
-    def test_local_notification_returns_accepted_without_forwarding(self):
-        with patch.object(proxy, "execute_notebook", return_value={"status": 202}), patch.dict(
-            proxy.LOCAL_TOOL_HANDLERS, {"execute_notebook": proxy.execute_notebook}
-        ), patch.object(proxy.requests, "request") as forwarded:
-            response = self.post(
-                {
-                    "jsonrpc": "2.0",
-                    "method": "tools/call",
-                    "params": {"name": "execute_notebook", "arguments": {"workspaceId": "w", "notebookId": "n"}},
-                }
-            )
-
-        self.assertEqual(202, response.status_code)
-        forwarded.assert_not_called()
 
     def test_execute_notebook_uses_documented_api_and_reads_async_headers(self):
         fabric_response = Mock()

@@ -233,7 +233,7 @@ def _json_response(payload, status, headers):
     )
 
 
-def _proxy_upstream(request, payload, local_responses):
+def _proxy_upstream(request, payload):
     upstream = requests.request(
         method=request.method,
         url=TARGET_BASE_URL,
@@ -249,21 +249,10 @@ def _proxy_upstream(request, payload, local_responses):
     if "application/json" in content_type:
         try:
             result = _inject_local_tools(upstream.json())
-            if local_responses:
-                result = result if isinstance(result, list) else [result]
-                result.extend(local_responses)
             upstream.close()
             return _json_response(result, upstream.status_code, headers)
         except (TypeError, ValueError):
             pass
-
-    if local_responses:
-        upstream.close()
-        return _json_response(
-            _json_rpc_error(None, -32603, "Cannot combine local tool results with upstream response"),
-            502,
-            headers,
-        )
 
     def stream_upstream():
         try:
@@ -281,35 +270,17 @@ def _proxy_upstream(request, payload, local_responses):
 
 def proxy_fabric_request(request: Request):
     """Proxy Fabric MCP traffic while aggregating proxy-owned notebook tools."""
-    incoming_secret = request.args.get("secret") or request.headers.get("X-Proxy-Secret")
+    incoming_secret = request.args.get("secret")
     if not PROXY_SECRET or incoming_secret != PROXY_SECRET:
         return jsonify(_json_rpc_error(None, -32000, "Invalid or missing proxy secret")), 401
 
     payload = request.get_json(silent=True)
-    messages = payload if isinstance(payload, list) else [payload]
-    local_responses = []
-    upstream_messages = []
-    handled_local_message = False
 
-    for message in messages:
-        if _is_local_tool_call(message):
-            handled_local_message = True
-            response = _handle_local_tool_call(message)
-            if response is not None and message.get("id") is not None:
-                local_responses.append(response)
-        else:
-            upstream_messages.append(message)
+    if _is_local_tool_call(payload):
+        return _json_response(_handle_local_tool_call(payload), 200, {})
 
-    if local_responses and not upstream_messages:
-        result = local_responses if isinstance(payload, list) else local_responses[0]
-        return _json_response(result, 200, {})
-
-    if handled_local_message and not upstream_messages:
-        return Response(status=202)
-
-    upstream_payload = upstream_messages if isinstance(payload, list) else payload
     try:
-        return _proxy_upstream(request, upstream_payload, local_responses)
+        return _proxy_upstream(request, payload)
     except requests.RequestException as exc:
         status = exc.response.status_code if exc.response is not None else None
         message = f"Upstream MCP request failed{f' with HTTP {status}' if status else ''}"
