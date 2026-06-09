@@ -49,6 +49,21 @@ NOTEBOOK_TOOLS = [
         },
         "annotations": {"title": "Get Notebook Result", "readOnlyHint": True, "destructiveHint": False},
     },
+    {
+        "name": "list_item_job_instances",
+        "description": "Lists job instances for a Microsoft Fabric item.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspaceId": {"type": "string", "description": "The workspace UUID."},
+                "itemId": {"type": "string", "description": "The item UUID."},
+                "continuationToken": {"type": "string", "description": "Token for retrieving the next page of results."},
+            },
+            "required": ["workspaceId", "itemId"],
+            "additionalProperties": False,
+        },
+        "annotations": {"title": "List Item Job Instances", "readOnlyHint": True, "destructiveHint": False},
+    },
 ]
 
 LOCAL_TOOL_HANDLERS = {}
@@ -121,10 +136,22 @@ def get_notebook_result(workspaceId: str, notebookId: str, jobInstanceId: str):
     return response.json()
 
 
+def list_item_job_instances(workspaceId: str, itemId: str, continuationToken: str = None):
+    """List job instances for a Fabric item."""
+    url = f"{FABRIC_API_BASE_URL}/workspaces/{workspaceId}/items/{itemId}/jobs/instances"
+    params = {}
+    if continuationToken:
+        params["continuationToken"] = continuationToken
+    response = requests.get(url, headers=_fabric_headers(), params=params, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    return response.json()
+
+
 LOCAL_TOOL_HANDLERS.update(
     {
         "execute_notebook": execute_notebook,
         "get_notebook_result": get_notebook_result,
+        "list_item_job_instances": list_item_job_instances,
     }
 )
 

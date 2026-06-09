@@ -49,7 +49,7 @@ class ProxyTests(unittest.TestCase):
         response = self.post({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, upstream)
         body = json.loads(response.get_data())
 
-        self.assertEqual(["upstream_tool", "execute_notebook", "get_notebook_result"], [tool["name"] for tool in body["result"]["tools"]])
+        self.assertEqual(["upstream_tool", "execute_notebook", "get_notebook_result", "list_item_job_instances"], [tool["name"] for tool in body["result"]["tools"]])
         self.assertIn("inputSchema", body["result"]["tools"][1])
         self.assertNotIn("function", body["result"]["tools"][1])
         self.assertEqual("new-session", response.headers["Mcp-Session-Id"])
@@ -118,7 +118,7 @@ class ProxyTests(unittest.TestCase):
             ],
             upstream,
         )
-        self.assertEqual(2, len(json.loads(response.get_data())[0]["result"]["tools"]))
+        self.assertEqual(3, len(json.loads(response.get_data())[0]["result"]["tools"]))
 
     def test_execute_notebook_uses_documented_api_and_reads_async_headers(self):
         fabric_response = Mock()
@@ -150,6 +150,37 @@ class ProxyTests(unittest.TestCase):
             timeout=proxy.REQUEST_TIMEOUT,
         )
         self.assertEqual("Completed", result["status"])
+
+    def test_list_item_job_instances_calls_correct_url(self):
+        fabric_response = Mock()
+        fabric_response.json.return_value = {"value": [{"id": "job-1"}]}
+        with patch.object(proxy, "get_entra_token", return_value="token"), patch.object(
+            proxy.requests, "get", return_value=fabric_response
+        ) as get:
+            result = proxy.list_item_job_instances("workspace", "item")
+
+        get.assert_called_once_with(
+            "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances",
+            headers={"Authorization": "Bearer token"},
+            params={},
+            timeout=proxy.REQUEST_TIMEOUT,
+        )
+        self.assertEqual("job-1", result["value"][0]["id"])
+
+    def test_list_item_job_instances_passes_continuation_token(self):
+        fabric_response = Mock()
+        fabric_response.json.return_value = {"value": []}
+        with patch.object(proxy, "get_entra_token", return_value="token"), patch.object(
+            proxy.requests, "get", return_value=fabric_response
+        ) as get:
+            proxy.list_item_job_instances("workspace", "item", continuationToken="tok")
+
+        get.assert_called_once_with(
+            "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/jobs/instances",
+            headers={"Authorization": "Bearer token"},
+            params={"continuationToken": "tok"},
+            timeout=proxy.REQUEST_TIMEOUT,
+        )
 
 
 if __name__ == "__main__":
