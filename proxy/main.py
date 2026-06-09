@@ -32,6 +32,7 @@ NOTEBOOK_TOOLS = [
             "required": ["workspaceId", "notebookId"],
             "additionalProperties": False,
         },
+        "annotations": {"title": "Execute Notebook", "readOnlyHint": False, "destructiveHint": False},
     },
     {
         "name": "get_notebook_result",
@@ -46,6 +47,7 @@ NOTEBOOK_TOOLS = [
             "required": ["workspaceId", "notebookId", "jobInstanceId"],
             "additionalProperties": False,
         },
+        "annotations": {"title": "Get Notebook Result", "readOnlyHint": True, "destructiveHint": False},
     },
 ]
 
