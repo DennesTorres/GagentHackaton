@@ -5,8 +5,7 @@ from flask import Request, Response
 
 PROXY_SECRET = os.environ.get("PROXY_SECRET")
 ELASTIC_API_KEY = os.environ.get("ELASTIC_API_KEY")
-
-TARGET_URL = "https://my-elasticsearch-project-fb39e4.kb.europe-west1.gcp.elastic.cloud/api/agent_builder/mcp"
+KIBANA_URL = os.environ.get("KIBANA_URL")
 REQUEST_TIMEOUT = (
     float(os.environ.get("HTTP_CONNECT_TIMEOUT_SECONDS", "10")),
     float(os.environ.get("HTTP_READ_TIMEOUT_SECONDS", "300")),
@@ -25,8 +24,9 @@ HOP_BY_HOP_HEADERS = {
 
 
 def _forward_headers(request_headers):
-    if not ELASTIC_API_KEY:
-        raise RuntimeError("Missing required configuration: ELASTIC_API_KEY")
+    missing = [name for name, val in (("ELASTIC_API_KEY", ELASTIC_API_KEY), ("KIBANA_URL", KIBANA_URL)) if not val]
+    if missing:
+        raise RuntimeError(f"Missing required configuration: {', '.join(missing)}")
     headers = {
         key: value
         for key, value in request_headers
@@ -53,7 +53,7 @@ def proxy_elastic_request(request: Request):
     try:
         upstream = requests.request(
             method=request.method,
-            url=TARGET_URL,
+            url=KIBANA_URL,
             headers=_forward_headers(request.headers),
             data=request.get_data(),
             allow_redirects=True,

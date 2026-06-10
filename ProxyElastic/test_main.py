@@ -8,6 +8,7 @@ from flask import Flask, request
 
 os.environ["PROXY_SECRET"] = "test-secret"
 os.environ["ELASTIC_API_KEY"] = "test-api-key"
+os.environ["KIBANA_URL"] = "https://test-kibana.example.com/api/agent_builder/mcp"
 
 spec = importlib.util.spec_from_file_location("proxy_elastic", os.path.join(os.path.dirname(__file__), "main.py"))
 proxy = importlib.util.module_from_spec(spec)
