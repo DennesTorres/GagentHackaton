@@ -16,7 +16,7 @@ if not _staging_bucket:
 
 # Import root_agent from the Definition folder, relative to this file
 _here = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.abspath(os.path.join(_here, "..", "Definition")))
+sys.path.insert(0, _here)
 from Agents import root_agent  # noqa: E402
 
 # Read requirements from the sibling requirements.txt at runtime
@@ -25,8 +25,8 @@ with open(_req_path) as _f:
     _requirements = [line.strip() for line in _f if line.strip() and not line.startswith("#")]
 
 _extra_packages = [
-    os.path.abspath(os.path.join(_here, "..", "Definition", "Agents.py")),
-    os.path.abspath(os.path.join(_here, "..", "Definition", "prompt.md")),
+    os.path.abspath(os.path.join(_here, "Agents.py")),
+    os.path.abspath(os.path.join(_here, "prompt.md")),
 ]
 
 # Initialize Vertex AI

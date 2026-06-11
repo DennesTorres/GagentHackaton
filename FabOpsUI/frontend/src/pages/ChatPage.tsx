@@ -177,14 +177,14 @@ export default function ChatPage() {
   return (
     <div className="chat-page">
       <aside className="config-panel">
-        <p className="config-heading">Connection</p>
+        <p className="config-heading">Agent connection</p>
 
         <div className="form-group">
           <label htmlFor="agent-url">Agent URL</label>
           <input
             id="agent-url"
             type="url"
-            placeholder="https://…"
+            placeholder="https://…vertexai.app/…"
             value={config.url}
             onChange={(e) => setConfig((c) => ({ ...c, url: e.target.value }))}
           />
@@ -227,9 +227,17 @@ export default function ChatPage() {
         <div className="messages-container">
           {messages.length === 0 && (
             <div className="empty-state">
-              {config.url
-                ? "Send a message to start the conversation."
-                : "Enter an agent URL in the panel on the left to get started."}
+              {config.url ? (
+                <>
+                  <strong>Ready to evaluate</strong>
+                  Try: "every lakehouse in production must be assigned to a capacity" — or ask FabOps Copilot to list existing rules.
+                </>
+              ) : (
+                <>
+                  <strong>Connect to an agent</strong>
+                  Enter the Vertex AI Agent Engine URL in the panel on the left to get started.
+                </>
+              )}
             </div>
           )}
 
@@ -258,8 +266,8 @@ export default function ChatPage() {
               !config.url
                 ? "Set an agent URL first…"
                 : isRunning
-                ? "Waiting for agent…"
-                : "Type a message…"
+                ? "Agent is working…"
+                : "Describe a rule or ask about your Fabric governance…"
             }
             value={input}
             onChange={(e) => setInput(e.target.value)}

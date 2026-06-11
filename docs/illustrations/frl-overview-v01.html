@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FabricGuard — What it does</title>
+<style>
+  :root{
+    --bg:#0f1426; --panel:#161d35; --ink:#e8edff; --muted:#9aa7d0;
+    --line:#2c365a; --teal:#34d2c0; --indigo:#6d8bff; --green:#37d67a;
+    --red:#ff5d6c; --amber:#ffb547; --chip:#1d264a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif}
+  html,body{height:100%}
+  body{background-color:var(--bg);color:var(--ink);display:flex;align-items:center;justify-content:center;padding:28px}
+  .canvas{width:1180px;height:660px;background:var(--bg);position:relative;display:flex;flex-direction:column}
+  .head{padding:6px 8px 14px}
+  .kicker{color:var(--teal);font-size:13px;letter-spacing:2px;text-transform:uppercase;font-weight:700}
+  h1{font-size:27px;margin-top:4px;font-weight:700}
+  h1 b{color:var(--teal)}
+  .sub{color:var(--muted);font-size:14px;margin-top:6px}
+  .flow{flex:1;display:flex;align-items:center;gap:10px;padding:6px 4px}
+  .stage{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+         padding:16px 14px;height:380px;display:flex;flex-direction:column;position:relative}
+  .num{position:absolute;top:-12px;left:14px;width:26px;height:26px;border-radius:50%;
+       background:var(--teal);color:#08210f;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center}
+  .stage h3{font-size:15px;margin-bottom:4px}
+  .stage .who{color:var(--indigo);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
+  .stage p{color:var(--muted);font-size:12.5px;line-height:1.5}
+  .arrow{color:var(--teal);font-size:24px;flex:0 0 auto;opacity:.8}
+  .bubble{background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;color:var(--ink);line-height:1.45;font-style:italic}
+  .code{background:#0c1126;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-family:'Consolas',monospace;font-size:10.5px;line-height:1.5;color:#cdd7ff}
+  .code .k{color:var(--teal)} .code .v{color:var(--amber)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;margin:2px 3px 0 0}
+  .pass{background:rgba(55,214,122,.15);color:var(--green);border:1px solid rgba(55,214,122,.4)}
+  .fail{background:rgba(255,93,108,.15);color:var(--red);border:1px solid rgba(255,93,108,.4)}
+  .store{margin-top:auto;font-size:11px;color:var(--teal);font-weight:700;display:flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--teal);display:inline-block}
+  .donut{width:96px;height:96px;border-radius:50%;margin:6px auto 0;
+    background:conic-gradient(var(--green) 0 62%,var(--red) 62% 88%,var(--amber) 88% 100%);
+    display:flex;align-items:center;justify-content:center}
+  .donut .hole{width:58px;height:58px;border-radius:50%;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .donut .hole b{font-size:17px} .donut .hole span{font-size:9px;color:var(--muted)}
+  .foot{padding:8px;color:var(--muted);font-size:11px;text-align:center;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="head">
+      <div class="kicker">FabricGuard</div>
+      <h1>Govern Microsoft Fabric by writing a rule in <b>plain English</b></h1>
+      <div class="sub">From intent, to a stored governance language, to enforcement on your live tenant — end to end.</div>
+    </div>
+    <div class="flow">
+      <div class="stage">
+        <div class="num">1</div>
+        <h3>Describe the intent</h3>
+        <div class="who">You</div>
+        <p>Say the policy the way you'd say it out loud.</p>
+        <div class="bubble">"Every workspace must have at least two Entra admin groups."</div>
+      </div>
+      <div class="arrow">&#10142;</div>
+      <div class="stage">
+        <div class="num">2</div>
+        <h3>Compile to FRL</h3>
+        <div class="who">FRL Copilot</div>
+        <p>Reconciles terminology, checks Elastic for duplicates, generates the rule.</p>
+        <div class="code"><span class="k">RULE</span> ws-admin-001 {<br>&nbsp;<span class="k">APPLIES_TO</span>: <span class="v">Workspace</span><br>&nbsp;<span class="k">CHECK</span> SELF.PERMISSIONS(<br>&nbsp;&nbsp;ADMIN) COUNT &gt;= 2<br>}</div>
+        <div class="store"><span class="dot"></span> saved &amp; versioned in Elastic</div>
+      </div>
+      <div class="arrow">&#10142;</div>
+      <div class="stage">
+        <div class="num">3</div>
+        <h3>Run the rule</h3>
+        <div class="who">Compliance Orchestrator</div>
+        <p>Retrieves the rule from Elastic and drives its evaluation across every target object.</p>
+        <div class="bubble">rule_id + scope&nbsp;&rarr;&nbsp;evaluate all matching Workspaces</div>
+        <div class="store"><span class="dot"></span> one run, one auditable result</div>
+      </div>
+      <div class="arrow">&#10142;</div>
+      <div class="stage">
+        <div class="num">4</div>
+        <h3>Evaluate &amp; report</h3>
+        <div class="who">Policy Check &rarr; Elastic</div>
+        <p>Inspects the live Fabric tenant, returns pass/fail per object with evidence.</p>
+        <div><span class="pill pass">PASS</span><span class="pill fail">FAIL</span><span class="pill pass">PASS</span></div>
+        <div class="donut"><div class="hole"><b>62%</b><span>compliant</span></div></div>
+      </div>
+    </div>
+    <div class="foot">Gemini on Vertex AI Agent Engine &nbsp;·&nbsp; Elastic Cloud Serverless as memory &nbsp;·&nbsp; Microsoft Fabric as the governed target</div>
+  </div>
+</body>
+</html>

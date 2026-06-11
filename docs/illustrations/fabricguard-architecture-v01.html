@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FabricGuard — main actors and internal architecture</title>
+<style>
+  :root{
+    --bg:#0f1426; --panel:#161d35; --ink:#e8edff; --muted:#9aa7d0;
+    --line:#2c365a; --teal:#34d2c0; --indigo:#6d8bff; --amber:#ffb547; --green:#37d67a;
+    --faint:#121a30; --faintline:#222a47;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif}
+  html,body{height:100%}
+  body{background-color:var(--bg);color:var(--ink);display:flex;align-items:center;justify-content:center;padding:24px}
+  .canvas{width:1180px;height:660px;display:flex;flex-direction:column}
+  .head{padding:2px 4px 8px}
+  .kicker{color:var(--teal);font-size:13px;letter-spacing:2px;text-transform:uppercase;font-weight:700}
+  h1{font-size:24px;margin-top:4px} h1 b{color:var(--teal)}
+  .legend-top{color:var(--muted);font-size:12.5px;margin-top:6px}
+  .legend-top .m{color:var(--teal);font-weight:700} .legend-top .i{color:var(--muted);font-weight:700}
+  .stage{flex:1;display:flex;flex-direction:column;gap:12px;padding-top:8px}
+  .row{display:flex;align-items:stretch;gap:14px}
+  .label{writing-mode:vertical-rl;transform:rotate(180deg);text-align:center;font-size:11px;font-weight:700;
+         letter-spacing:1.5px;text-transform:uppercase;padding:4px;border-radius:8px;flex:0 0 26px;display:flex;align-items:center;justify-content:center}
+  .label.main{color:var(--teal);background:rgba(52,210,192,.08);border:1px solid rgba(52,210,192,.3)}
+  .label.int{color:var(--muted);background:var(--faint);border:1px solid var(--faintline)}
+  .actors{flex:1;display:flex;gap:14px;align-items:center}
+  .actor{flex:1;background:var(--panel);border:1px solid var(--teal);border-radius:14px;padding:14px 16px;height:128px;position:relative}
+  .actor h3{font-size:16px;color:var(--teal)} .actor .role{font-size:11px;color:var(--indigo);text-transform:uppercase;letter-spacing:.5px;margin:2px 0 8px;font-weight:700}
+  .actor p{font-size:12px;color:var(--muted);line-height:1.45}
+  .flowarr{color:var(--teal);font-size:22px;flex:0 0 auto;align-self:center}
+  .ext{display:flex;gap:14px}
+  .extbox{flex:1;border-radius:12px;padding:11px 16px;display:flex;align-items:center;gap:12px}
+  .extbox.el{background:rgba(52,210,192,.08);border:1px solid rgba(52,210,192,.35)}
+  .extbox.fab{background:rgba(109,139,255,.08);border:1px solid rgba(109,139,255,.35)}
+  .extbox b{font-size:14px} .extbox.el b{color:var(--teal)} .extbox.fab b{color:var(--indigo)}
+  .extbox span{font-size:11.5px;color:var(--muted)}
+  .internal{display:flex;gap:14px;background:var(--faint);border:1px dashed var(--faintline);border-radius:12px;padding:10px 14px}
+  .ichip{flex:1;background:#0e1530;border:1px solid var(--faintline);border-radius:9px;padding:8px 11px}
+  .ichip h4{font-size:11.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+  .ichip p{font-size:10.8px;color:#6f7aa3;line-height:1.4;margin-top:3px}
+  .foot{padding:7px 4px 0;color:var(--muted);font-size:11.5px;border-top:1px solid var(--line);margin-top:6px;text-align:center}
+</style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="head">
+      <div class="kicker">FabricGuard architecture</div>
+      <h1>Three <b>main actors</b> — everything else is supporting cast</h1>
+      <div class="legend-top"><span class="m">■ Main actors</span> the user-facing flow &nbsp;·&nbsp; <span class="i">▢ Internal architecture</span> makes them work, but isn't the focus</div>
+    </div>
+    <div class="stage">
+      <div class="row">
+        <div class="label main">Main actors</div>
+        <div class="actors">
+          <div class="actor"><h3>FRL Copilot</h3><div class="role">Authoring face</div>
+            <p>Plain English &rarr; FRL. Dedups &amp; versions against Elastic before saving. Never edits in place.</p></div>
+          <div class="flowarr">&#10142;</div>
+          <div class="actor"><h3>Compliance Orchestrator</h3><div class="role">Run conductor</div>
+            <p>Pulls the rule, drives evaluation across targets, persists the run's results.</p></div>
+          <div class="flowarr">&#10142;</div>
+          <div class="actor"><h3>Policy Check</h3><div class="role">Evaluator</div>
+            <p>Walks the live tenant, applies each CHECK, returns pass/fail per object with evidence.</p></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="label int">External</div>
+        <div class="ext" style="flex:1">
+          <div class="extbox el"><b>Elastic Cloud Serverless</b><span>governance-rules + governance-results · ELSER v2 hybrid search · the system's memory</span></div>
+          <div class="extbox fab"><b>Microsoft Fabric</b><span>the governed tenant — workspaces, lakehouses, tables, MLVs</span></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="label int">Internal</div>
+        <div class="internal" style="flex:1">
+          <div class="ichip"><h4>Copilot sub-agents</h4><p>Google-Search &amp; URL-fetch specialists — ground terminology in Fabric docs. Packaged inside the Copilot.</p></div>
+          <div class="ichip"><h4>MCP proxies (Cloud Run)</h4><p>Elastic proxy (adds save_rule / save_results write tools) · Fabric REST proxy. Keep credentials out of agent code.</p></div>
+          <div class="ichip"><h4>Vertex Agent Engine</h4><p>Each main actor is a Reasoning Engine deploy, called over :query. SDK-deployed to dodge the Studio MCP bug.</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">One responsibility per agent keeps the audit trail legible — a failure is attributable to one agent and one tool call, not buried in a monolith.</div>
+  </div>
+</body>
+</html>

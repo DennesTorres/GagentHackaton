@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Anatomy of an FRL rule</title>
+<style>
+  :root{
+    --bg:#0f1426; --panel:#161d35; --ink:#e8edff; --muted:#9aa7d0;
+    --line:#2c365a; --teal:#34d2c0; --indigo:#6d8bff; --amber:#ffb547; --pink:#ff7eb6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif}
+  html,body{height:100%}
+  body{background-color:var(--bg);color:var(--ink);display:flex;align-items:center;justify-content:center;padding:28px}
+  .canvas{width:1180px;height:660px;position:relative;display:flex;flex-direction:column}
+  .head{padding:2px 4px 12px}
+  .kicker{color:var(--teal);font-size:13px;letter-spacing:2px;text-transform:uppercase;font-weight:700}
+  h1{font-size:26px;margin-top:4px} h1 b{color:var(--teal)}
+  .sub{color:var(--muted);font-size:14px;margin-top:6px}
+  .body{flex:1;display:flex;gap:26px;align-items:center}
+  .code{background:#0c1126;border:1px solid var(--line);border-radius:14px;padding:22px 26px;
+        font-family:'Consolas',monospace;font-size:16px;line-height:2.0;flex:0 0 560px}
+  .k{color:var(--teal);font-weight:700}
+  .str{color:var(--amber)} .var{color:var(--pink)} .ty{color:var(--indigo)} .cm{color:var(--muted)}
+  .row{display:flex;align-items:center;gap:12px}
+  .tag{flex:0 0 132px;text-align:right;color:var(--teal);font-weight:700;font-size:12.5px;font-family:'Segoe UI',sans-serif}
+  .desc{color:var(--muted);font-size:13px;line-height:1.45;border-left:2px solid var(--line);padding-left:14px}
+  .desc b{color:var(--ink);font-weight:600}
+  .legend{display:flex;flex-direction:column;gap:14px;flex:1}
+  .foot{padding:8px 4px 0;color:var(--muted);font-size:12px;border-top:1px solid var(--line);margin-top:8px}
+  .foot b{color:var(--teal)}
+</style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="head">
+      <div class="kicker">FabricGuard Rule Language</div>
+      <h1>Anatomy of an <b>FRL rule</b></h1>
+      <div class="sub">A governance rule is not free text — it has structure a machine can evaluate.</div>
+    </div>
+    <div class="body">
+      <pre class="code"><span class="k">RULE</span> ws-admin-groups-001 {
+  <span class="k">NAME</span>:       <span class="str">"Workspace must have admin groups"</span>
+  <span class="k">VERSION</span>:    <span class="str">"1.0.0"</span>
+  <span class="k">SEVERITY</span>:   ERROR
+  <span class="k">APPLIES_TO</span>: <span class="ty">Workspace</span>
+
+  <span class="k">PARAMS</span> { admin_groups: <span class="ty">List&lt;EntraGroup&gt;</span> }
+
+  <span class="k">CHECK</span> SELF.PERMISSIONS(ADMIN)
+        CONTAINS_ALL <span class="var">$admin_groups</span>
+
+  <span class="k">FINDING</span>:     <span class="str">"{displayName} is missing …"</span>
+  <span class="k">REMEDIATION</span>: <span class="str">"Add the groups as Admins"</span>
+}</pre>
+      <div class="legend">
+        <div class="row"><div class="tag">APPLIES_TO</div><div class="desc"><b>What it targets.</b> Any Fabric item type — and any new type Microsoft adds is valid with no language change.</div></div>
+        <div class="row"><div class="tag">PARAMS</div><div class="desc"><b>Reusable inputs.</b> Typed parameters referenced as <span style="color:var(--pink)">$name</span>, so one rule serves many tenants.</div></div>
+        <div class="row"><div class="tag">CHECK</div><div class="desc"><b>The condition.</b> <span style="color:var(--ink)">SELF.&lt;path&gt;</span> addresses any object property. Multiple CHECKs all must pass.</div></div>
+        <div class="row"><div class="tag">SEVERITY</div><div class="desc"><b>How much it matters.</b> ERROR · WARNING · INFO.</div></div>
+        <div class="row"><div class="tag">FINDING / REMEDIATION</div><div class="desc"><b>What to tell the user</b> when it fails, and how to fix it — templated with live values.</div></div>
+      </div>
+    </div>
+    <div class="foot">Stored verbatim in Elastic alongside parsed metadata &nbsp;·&nbsp; <b>VERSION + is_current</b> make every rule immutable and history-aware</div>
+  </div>
+</body>
+</html>
