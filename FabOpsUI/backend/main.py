@@ -1,8 +1,6 @@
 import os
 from pathlib import Path
 
-import google.auth
-import google.auth.transport.requests
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -34,6 +32,8 @@ def read_config():
 
 @app.get("/api/token")
 def get_token():
+    import google.auth
+    import google.auth.transport.requests
     credentials, _ = google.auth.default(
         scopes=["https://www.googleapis.com/auth/cloud-platform"]
     )
