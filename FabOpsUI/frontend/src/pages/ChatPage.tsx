@@ -49,14 +49,7 @@ export default function ChatPage() {
 
     setMessages(prev => [...prev, { id: userMsgId, role: "user", content: text, isStreaming: false }]);
 
-    let headers: Record<string, string> = {};
-    try {
-      const r = await fetch('/api/token');
-      const data = await r.json() as { token: string };
-      headers = { Authorization: `Bearer ${data.token}` };
-    } catch { /* proceed without token */ }
-
-    const agent = new HttpAgent({ url: agentUrl, headers });
+    const agent = new HttpAgent({ url: '/api/agent' });
     let activeMsgId: string | null = null;
 
     agent
