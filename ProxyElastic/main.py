@@ -49,6 +49,45 @@ ELASTIC_TOOLS = [
         },
         "annotations": {"title": "Save Rule", "readOnlyHint": False, "destructiveHint": False},
     },
+    {
+        "name": "save_results",
+        "description": (
+            "Bulk-index governance check results into the governance-results index. "
+            "Send all results for a single policy-check run in one call. "
+            "Each item becomes one document; the doc ID is {run_id}_{rule_id}_{item_id}. "
+            "run_id and run_timestamp are injected into every document automatically."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "run_id": {
+                    "type": "string",
+                    "description": "Unique identifier for this policy-check run, e.g. a UUID.",
+                },
+                "results": {
+                    "type": "array",
+                    "description": "Array of result objects. Each must include rule_id and item_id; all other fields are stored as-is.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "rule_id":  {"type": "string"},
+                            "item_id":  {"type": "string"},
+                            "status":   {"type": "string", "description": "e.g. 'pass', 'fail', 'warning'"},
+                        },
+                        "required": ["rule_id", "item_id"],
+                        "additionalProperties": True,
+                    },
+                },
+                "run_timestamp": {
+                    "type": "string",
+                    "description": "ISO-8601 UTC timestamp for the run. Defaults to now if omitted.",
+                },
+            },
+            "required": ["run_id", "results"],
+            "additionalProperties": False,
+        },
+        "annotations": {"title": "Save Results", "readOnlyHint": False, "destructiveHint": False},
+    },
 ]
 
 LOCAL_TOOL_HANDLERS = {}
@@ -60,6 +99,11 @@ class _ElasticToolError(Exception):
         self.step = step
         self.status = status
         self.error = error
+
+
+class _ElasticBulkError(Exception):
+    def __init__(self, json_text):
+        self.json_text = json_text
 
 # ── Helper functions ───────────────────────────────────────────────────────────
 
@@ -152,6 +196,8 @@ def _handle_local_tool_call(message):
     except _ElasticToolError as exc:
         err = json.dumps({"saved": False, "step": exc.step, "status": exc.status, "error": exc.error})
         return _tool_result(message.get("id"), error=err)
+    except _ElasticBulkError as exc:
+        return _tool_result(message.get("id"), error=exc.json_text)
     except Exception as exc:
         err = json.dumps({"saved": False, "step": "unknown", "status": None, "error": str(exc)[:500]})
         return _tool_result(message.get("id"), error=err)
@@ -238,6 +284,61 @@ def save_rule(rule_id, name, nl_intent, frl_code, description=None, tags=None, c
 
 
 LOCAL_TOOL_HANDLERS["save_rule"] = save_rule
+
+
+def save_results(run_id, results, run_timestamp=None, **_):
+    if not ELASTICSEARCH_URL:
+        raise _ElasticBulkError(json.dumps({"saved": False, "indexed": 0, "errors": ["ELASTICSEARCH_URL is not configured"], "status": None}))
+
+    if not results:
+        raise _ElasticBulkError(json.dumps({"saved": False, "indexed": 0, "errors": ["results array is empty"], "status": None}))
+
+    if run_timestamp is None:
+        run_timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    lines = []
+    for item in results:
+        rule_id = item.get("rule_id", "")
+        item_id = item.get("item_id", "")
+        doc_id = f"{run_id}_{rule_id}_{item_id}"
+        lines.append(json.dumps({"index": {"_index": "governance-results", "_id": doc_id}}))
+        lines.append(json.dumps({**item, "run_id": run_id, "run_timestamp": run_timestamp}))
+
+    bulk_body = "\n".join(lines) + "\n"
+
+    try:
+        resp = requests.post(
+            f"{ELASTICSEARCH_URL}/_bulk",
+            headers={
+                "Authorization": f"ApiKey {ELASTIC_API_KEY}",
+                "Content-Type": "application/x-ndjson",
+            },
+            data=bulk_body.encode("utf-8"),
+            timeout=SAVE_RULE_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise _ElasticBulkError(json.dumps({"saved": False, "indexed": 0, "errors": [str(exc)[:500]], "status": None})) from exc
+
+    if resp.status_code >= 400:
+        raise _ElasticBulkError(json.dumps({"saved": False, "indexed": 0, "errors": [resp.text[:500]], "status": resp.status_code}))
+
+    body = resp.json()
+    if body.get("errors"):
+        ok_count = 0
+        error_msgs = []
+        for item_result in body.get("items", []):
+            action_result = item_result.get("index", {})
+            if action_result.get("status", 0) < 400:
+                ok_count += 1
+            else:
+                err_info = action_result.get("error", {})
+                error_msgs.append(f"{action_result.get('_id', '?')}: {err_info.get('type', '?')} – {err_info.get('reason', '?')}")
+        raise _ElasticBulkError(json.dumps({"saved": False, "indexed": ok_count, "errors": error_msgs[:3], "status": resp.status_code}))
+
+    return {"saved": True, "run_id": run_id, "indexed": len(results)}
+
+
+LOCAL_TOOL_HANDLERS["save_results"] = save_results
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
