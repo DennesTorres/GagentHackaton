@@ -3,7 +3,6 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.background import BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,7 +32,7 @@ def read_config():
 
 
 @app.post("/api/agent")
-async def agent_proxy(request: Request, background_tasks: BackgroundTasks):
+async def agent_proxy(request: Request):
     agent_url = os.environ.get("FABOPS")
     if not agent_url:
         raise HTTPException(status_code=503, detail="FABOPS agent URL not configured")
@@ -46,25 +45,30 @@ async def agent_proxy(request: Request, background_tasks: BackgroundTasks):
     credentials.refresh(google.auth.transport.requests.Request())
 
     body = await request.body()
-    headers = {
+    upstream_headers = {
         "Authorization": f"Bearer {credentials.token}",
         "Content-Type": request.headers.get("content-type", "application/json"),
-        "Accept": request.headers.get("accept", "*/*"),
+        # Tell the agent we want a streaming SSE response
+        "Accept": "text/event-stream",
     }
 
-    client = httpx.AsyncClient(timeout=httpx.Timeout(None))
-    upstream = await client.send(
-        client.build_request("POST", agent_url, content=body, headers=headers),
-        stream=True,
-    )
-    background_tasks.add_task(upstream.aclose)
-    background_tasks.add_task(client.aclose)
+    async def stream():
+        # async with guarantees cleanup even on client disconnect or exception
+        async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
+            async with client.stream(
+                "POST", agent_url, content=body, headers=upstream_headers
+            ) as response:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
 
     return StreamingResponse(
-        upstream.aiter_bytes(),
-        status_code=upstream.status_code,
-        media_type=upstream.headers.get("content-type", "text/event-stream"),
-        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "X-Accel-Buffering": "no",   # disable nginx/Cloud Run proxy buffering
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
     )
 
 

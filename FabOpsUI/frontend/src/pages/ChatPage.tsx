@@ -11,11 +11,12 @@ interface ChatMessage {
 }
 
 export default function ChatPage() {
-  const [agentUrl, setAgentUrl] = useState<string>('');
+  const [ready, setReady] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
+  const [currentStep, setCurrentStep] = useState<string | null>(null);
   const threadIdRef = useRef(crypto.randomUUID());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -24,22 +25,23 @@ export default function ChatPage() {
       .then(r => r.json())
       .then((data: { agent_url: string | null }) => {
         if (!data.agent_url) throw new Error('FABOPS environment variable not set.');
-        setAgentUrl(data.agent_url);
+        setReady(true);
       })
       .catch((e: Error) => setConfigError(e.message));
   }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, currentStep]);
 
-  const sendMessage = async (e: FormEvent) => {
+  const sendMessage = (e: FormEvent) => {
     e.preventDefault();
     const text = input.trim();
-    if (!text || !agentUrl || isRunning) return;
+    if (!text || !ready || isRunning) return;
 
     setInput("");
     setIsRunning(true);
+    setCurrentStep(null);
 
     const userMsgId = crypto.randomUUID();
     const history = [
@@ -66,33 +68,69 @@ export default function ChatPage() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const e = event as any;
           switch (event.type) {
+
+            case EventType.STEP_STARTED:
+              setCurrentStep(e.stepName as string || "Working…");
+              break;
+
+            case EventType.STEP_FINISHED:
+              setCurrentStep(null);
+              break;
+
             case EventType.TEXT_MESSAGE_START:
               activeMsgId = e.messageId as string;
+              setCurrentStep(null);
               setMessages(prev => [...prev, { id: activeMsgId!, role: "assistant", content: "", isStreaming: true }]);
               break;
+
             case EventType.TEXT_MESSAGE_CONTENT: {
               const msgId = (e.messageId as string) || activeMsgId;
-              setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: m.content + (e.delta as string || "") } : m));
+              setMessages(prev => prev.map(m =>
+                m.id === msgId ? { ...m, content: m.content + (e.delta as string || "") } : m
+              ));
               break;
             }
+
             case EventType.TEXT_MESSAGE_END: {
               const msgId = (e.messageId as string) || activeMsgId;
-              setMessages(prev => prev.map(m => m.id === msgId ? { ...m, isStreaming: false } : m));
+              setMessages(prev => prev.map(m =>
+                m.id === msgId ? { ...m, isStreaming: false } : m
+              ));
               break;
             }
-            case EventType.TOOL_CALL_START:
-              setMessages(prev => [...prev, { id: e.toolCallId as string || crypto.randomUUID(), role: "assistant", content: `Calling tool: ${e.toolCallName as string || "unknown"}…`, isStreaming: true, isToolCall: true }]);
+
+            case EventType.TOOL_CALL_START: {
+              const toolName = e.toolCallName as string || "unknown";
+              setCurrentStep(`Calling tool: ${toolName}`);
+              setMessages(prev => [...prev, {
+                id: e.toolCallId as string || crypto.randomUUID(),
+                role: "assistant",
+                content: `Calling tool: ${toolName}…`,
+                isStreaming: true,
+                isToolCall: true,
+              }]);
               break;
+            }
+
             case EventType.TOOL_CALL_END:
-              setMessages(prev => prev.map(m => m.id === (e.toolCallId as string) ? { ...m, isStreaming: false } : m));
+              setCurrentStep(null);
+              setMessages(prev => prev.map(m =>
+                m.id === (e.toolCallId as string) ? { ...m, isStreaming: false } : m
+              ));
               break;
+
             case EventType.RUN_FINISHED:
               setIsRunning(false);
+              setCurrentStep(null);
               break;
+
             case EventType.RUN_ERROR: {
               const errText = (e.message as string) || "Agent reported an error";
+              setCurrentStep(null);
               if (activeMsgId) {
-                setMessages(prev => prev.map(m => m.id === activeMsgId ? { ...m, content: errText, isStreaming: false } : m));
+                setMessages(prev => prev.map(m =>
+                  m.id === activeMsgId ? { ...m, content: errText, isStreaming: false } : m
+                ));
               } else {
                 setMessages(prev => [...prev, { id: crypto.randomUUID(), role: "assistant", content: errText, isStreaming: false }]);
               }
@@ -102,7 +140,13 @@ export default function ChatPage() {
           }
         },
         error: (err: Error) => {
-          setMessages(prev => [...prev, { id: crypto.randomUUID(), role: "assistant", content: `Connection error: ${err.message}`, isStreaming: false }]);
+          setCurrentStep(null);
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Connection error: ${err.message}`,
+            isStreaming: false,
+          }]);
           setIsRunning(false);
         },
       });
@@ -110,6 +154,7 @@ export default function ChatPage() {
 
   const clearChat = () => {
     setMessages([]);
+    setCurrentStep(null);
     threadIdRef.current = crypto.randomUUID();
   };
 
@@ -141,6 +186,16 @@ export default function ChatPage() {
             </div>
           ))}
 
+          {currentStep && (
+            <div className="message message-assistant message-thinking">
+              <div className="message-role">Agent</div>
+              <div className="message-content thinking-indicator">
+                <span className="thinking-dot" /><span className="thinking-dot" /><span className="thinking-dot" />
+                <span className="thinking-label">{currentStep}</span>
+              </div>
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
 
@@ -150,9 +205,9 @@ export default function ChatPage() {
             placeholder={isRunning ? "Agent is working…" : "Describe a rule or ask about your Fabric governance…"}
             value={input}
             onChange={e => setInput(e.target.value)}
-            disabled={!agentUrl || isRunning}
+            disabled={!ready || isRunning}
           />
-          <button type="submit" disabled={!input.trim() || !agentUrl || isRunning}>
+          <button type="submit" disabled={!input.trim() || !ready || isRunning}>
             {isRunning ? "…" : "Send"}
           </button>
         </form>
