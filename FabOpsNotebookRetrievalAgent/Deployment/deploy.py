@@ -3,7 +3,7 @@ import os
 import sys
 
 import vertexai
-from vertexai.preview import agent_engines
+from vertexai import agent_engines
 
 # Validate required environment variables
 _project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
