@@ -24,6 +24,11 @@ _req_path = os.path.join(_here, "requirements.txt")
 with open(_req_path) as _f:
     _requirements = [line.strip() for line in _f if line.strip() and not line.startswith("#")]
 
+_extra_packages = [
+    os.path.join(_here, "..", "Definition", "Agents.py"),
+    os.path.join(_here, "..", "Definition", "prompt.md"),
+]
+
 # Initialize Vertex AI
 vertexai.init(
     project=_project,
@@ -44,12 +49,14 @@ if args.resource_name:
         resource_name=args.resource_name,
         agent_engine=root_agent,
         requirements=_requirements,
+        extra_packages=_extra_packages,
     )
     print(f"Updated resource name: {result.resource_name}")
 else:
     result = agent_engines.create(
         agent_engine=root_agent,
         requirements=_requirements,
+        extra_packages=_extra_packages,
         display_name=display_name,
     )
     print(f"Deployed resource name: {result.resource_name}")
