@@ -1,8 +1,11 @@
 import os
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from google.cloud import secretmanager
 from pydantic import BaseModel
 
@@ -83,3 +86,15 @@ def write_secrets(payload: SecretsPayload):
     if payload.client_secret is not None:
         _set_secret(SECRET_IDS["client_secret"], payload.client_secret)
     return {"status": "ok"}
+
+
+# ── Static files (React SPA) ──────────────────────────────────────────────────
+# Served only when the built dist/ folder is present (i.e. in the container).
+_dist = Path(__file__).parent / "dist"
+if _dist.exists():
+    app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        # All non-/api routes return index.html so React Router handles them.
+        return FileResponse(_dist / "index.html")
