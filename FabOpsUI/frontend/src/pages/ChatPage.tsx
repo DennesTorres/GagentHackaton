@@ -63,7 +63,7 @@ export default function ChatPage() {
     let activeMsgId: string | null = null;
 
     agent
-      .runAgent({
+      .run({
         runId: crypto.randomUUID(),
         threadId: threadIdRef.current,
         messages: history,
