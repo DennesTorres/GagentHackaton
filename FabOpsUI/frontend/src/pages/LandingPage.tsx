@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AuthConfig, useAuth } from '../auth/AuthProvider';
 
 const HexLogo = ({ id, size = 40 }: { id: string; size?: number }) => (
@@ -18,29 +18,44 @@ const HexLogo = ({ id, size = 40 }: { id: string; size?: number }) => (
 
 export default function LandingPage() {
   const { login, error, clearError } = useAuth();
-  const [stage, setStage] = useState<'hero' | 'config' | 'loading'>('hero');
-  const [tenantId, setTenantId] = useState('');
-  const [clientId, setClientId] = useState('');
+  const [stage, setStage] = useState<'hero' | 'config' | 'signing-in'>('hero');
+  const [cfg, setCfg] = useState<AuthConfig | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const configRef = useRef<HTMLDivElement>(null);
 
+  // Fetch credentials from backend as soon as the auth card appears.
   useEffect(() => {
-    if (stage === 'config') {
+    if (stage !== 'config') return;
+    setCfg(null);
+    setLoadError(null);
+    fetch('/api/secrets')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((data: { tenant_id: string | null; client_id: string | null }) => {
+        if (!data.tenant_id || !data.client_id)
+          throw new Error('Azure credentials not found in Secret Manager.');
+        setCfg({ tenantId: data.tenant_id, clientId: data.client_id });
+      })
+      .catch((e: Error) => setLoadError(e.message));
+  }, [stage]);
+
+  useEffect(() => {
+    if (stage === 'config')
       setTimeout(() => configRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
-    }
   }, [stage]);
 
   const handleGetStarted = () => { clearError(); setStage('config'); };
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleSignIn = async () => {
+    if (!cfg) return;
     clearError();
-    setStage('loading');
-    const cfg: AuthConfig = { tenantId: tenantId.trim(), clientId: clientId.trim() };
+    setLoadError(null);
+    setStage('signing-in');
     await login(cfg, false);
     setStage('config');
   };
 
-  const canSubmit = stage !== 'loading' && tenantId.trim().length > 0 && clientId.trim().length > 0;
+  const authError = error || loadError;
+  const ready = !!cfg && stage !== 'signing-in';
 
   return (
     <div className="landing">
@@ -52,7 +67,6 @@ export default function LandingPage() {
         <div className="hero-glow hero-glow-r" aria-hidden />
 
         <div className="hero-inner">
-          {/* Left: copy */}
           <div className="hero-copy">
             <div className="brand">
               <HexLogo id="hero-logo" size={40} />
@@ -107,71 +121,34 @@ export default function LandingPage() {
 }`}</pre>
             </div>
             <div className="demo-results">
-              <div className="demo-result pass">
-                <span className="res-dot" />
-                <span className="res-name">LH_Sales_Prod</span>
-                <span className="res-status">PASS</span>
-              </div>
-              <div className="demo-result pass">
-                <span className="res-dot" />
-                <span className="res-name">LH_Finance_Q4</span>
-                <span className="res-status">PASS</span>
-              </div>
-              <div className="demo-result fail">
-                <span className="res-dot" />
-                <span className="res-name">LH_Marketing_New</span>
-                <span className="res-status">FAIL</span>
-              </div>
+              <div className="demo-result pass"><span className="res-dot" /><span className="res-name">LH_Sales_Prod</span><span className="res-status">PASS</span></div>
+              <div className="demo-result pass"><span className="res-dot" /><span className="res-name">LH_Finance_Q4</span><span className="res-status">PASS</span></div>
+              <div className="demo-result fail"><span className="res-dot" /><span className="res-name">LH_Marketing_New</span><span className="res-status">FAIL</span></div>
             </div>
           </div>
         </div>
       </section>
 
       {/* ── Sign in ───────────────────────────────── */}
-      {(stage === 'config' || stage === 'loading') && (
+      {(stage === 'config' || stage === 'signing-in') && (
         <section className="auth-section" ref={configRef}>
           <div className="auth-card">
             <h2 className="auth-card-title">Sign in to FabOps</h2>
-            <p className="auth-card-sub">Enter your Azure AD application credentials to continue</p>
+            <p className="auth-card-sub">
+              {!cfg && !loadError ? 'Loading configuration…' : 'Authenticate with your Microsoft account'}
+            </p>
 
-            <form onSubmit={handleSubmit} className="auth-form">
-              <div className="form-group">
-                <label htmlFor="land-tenant">Azure Tenant ID</label>
-                <input
-                  id="land-tenant"
-                  type="text"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  value={tenantId}
-                  onChange={e => setTenantId(e.target.value)}
-                  autoComplete="off"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="land-client">Azure Client ID</label>
-                <input
-                  id="land-client"
-                  type="text"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  value={clientId}
-                  onChange={e => setClientId(e.target.value)}
-                  autoComplete="off"
-                  required
-                />
-              </div>
+            {authError && <p className="msg-error">{authError}</p>}
 
-              {error && <p className="msg-error">{error}</p>}
-
-              <button type="submit" className="btn-msft" disabled={!canSubmit}>
-                <svg viewBox="0 0 21 21" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="1" y="1" width="9" height="9" fill="#f25022" />
-                  <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
-                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
-                  <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
-                </svg>
-                {stage === 'loading' ? 'Signing in…' : 'Sign in with Microsoft'}
-              </button>
-            </form>
+            <button className="btn-msft" disabled={!ready} onClick={handleSignIn}>
+              <svg viewBox="0 0 21 21" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+              </svg>
+              {stage === 'signing-in' ? 'Signing in…' : 'Sign in with Microsoft'}
+            </button>
           </div>
         </section>
       )}
@@ -192,10 +169,7 @@ export default function LandingPage() {
                 </svg>
               </div>
               <h3>Define in plain English</h3>
-              <p>
-                Describe a governance rule naturally. FabOps Copilot reconciles your intent with
-                Fabric terminology, prevents duplicates, and compiles it to FRL — versioned and immutable.
-              </p>
+              <p>Describe a governance rule naturally. FabOps Copilot reconciles your intent with Fabric terminology, prevents duplicates, and compiles it to FRL — versioned and immutable.</p>
             </div>
             <div className="feature-card">
               <div className="feature-num">02</div>
@@ -205,10 +179,7 @@ export default function LandingPage() {
                 </svg>
               </div>
               <h3>Deploy evaluation agents</h3>
-              <p>
-                Agents walk your live Fabric tenant — workspaces, items, capacities — through the Fabric API
-                and notebooks. Each rule clause is routed to the agent best equipped to verify it.
-              </p>
+              <p>Agents walk your live Fabric tenant — workspaces, items, capacities — through the Fabric API and notebooks. Each rule clause is routed to the agent best equipped to verify it.</p>
             </div>
             <div className="feature-card">
               <div className="feature-num">03</div>
@@ -218,16 +189,12 @@ export default function LandingPage() {
                 </svg>
               </div>
               <h3>Enforce with evidence</h3>
-              <p>
-                Every evaluation produces pass/fail with evidence. Every rule is versioned and auditable.
-                Elastic hybrid search understands rule semantics so your rulebook stays clean as it grows.
-              </p>
+              <p>Every evaluation produces pass/fail with evidence. Every rule is versioned and auditable. Elastic hybrid search understands rule semantics so your rulebook stays clean as it grows.</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Footer ───────────────────────────────── */}
       <footer className="landing-footer">
         <div className="landing-footer-brand">
           <HexLogo id="footer-logo" size={24} />
