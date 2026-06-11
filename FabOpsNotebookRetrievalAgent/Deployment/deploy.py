@@ -25,8 +25,8 @@ with open(_req_path) as _f:
     _requirements = [line.strip() for line in _f if line.strip() and not line.startswith("#")]
 
 _extra_packages = [
-    os.path.abspath(os.path.join(_here, "Agents.py")),
-    os.path.abspath(os.path.join(_here, "prompt.md")),
+    "Agents.py",
+    "prompt.md",
 ]
 
 # Initialize Vertex AI
