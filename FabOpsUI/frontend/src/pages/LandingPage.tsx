@@ -1,22 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { AuthConfig, useAuth } from '../auth/AuthProvider';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL ?? '';
-
-type Stage = 'hero' | 'config' | 'loading';
-type Mode = 'sample' | 'custom';
-
-interface SampleData {
-  tenant_id: string | null;
-  client_id: string | null;
-}
-
-function maskId(id: string | null): string {
-  if (!id) return '—';
-  if (id.length <= 12) return '••••••••';
-  return id.slice(0, 8) + '••••' + id.slice(-4);
-}
-
 const HexLogo = ({ id, size = 40 }: { id: string; size?: number }) => (
   <svg viewBox="0 0 40 46" fill="none" width={size} height={size}>
     <path d="M20 2L37 11.5V28.5L20 38 3 28.5V11.5L20 2Z"
@@ -34,26 +18,10 @@ const HexLogo = ({ id, size = 40 }: { id: string; size?: number }) => (
 
 export default function LandingPage() {
   const { login, error, clearError } = useAuth();
-  const [stage, setStage] = useState<Stage>('hero');
-  const [mode, setMode] = useState<Mode>('sample');
-  const [sampleData, setSampleData] = useState<SampleData | null>(null);
-  const [sampleLoading, setSampleLoading] = useState(false);
-  const [sampleError, setSampleError] = useState<string | null>(null);
+  const [stage, setStage] = useState<'hero' | 'config' | 'loading'>('hero');
   const [tenantId, setTenantId] = useState('');
   const [clientId, setClientId] = useState('');
   const configRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (stage === 'config' && mode === 'sample' && !sampleData) {
-      setSampleLoading(true);
-      setSampleError(null);
-      fetch(`${BACKEND}/api/secrets`)
-        .then(r => { if (!r.ok) throw new Error(`Backend error (HTTP ${r.status})`); return r.json() as Promise<SampleData>; })
-        .then(setSampleData)
-        .catch((e: Error) => setSampleError(e.message))
-        .finally(() => setSampleLoading(false));
-    }
-  }, [stage, mode, sampleData]);
 
   useEffect(() => {
     if (stage === 'config') {
@@ -63,42 +31,16 @@ export default function LandingPage() {
 
   const handleGetStarted = () => { clearError(); setStage('config'); };
 
-  const handleModeChange = (m: Mode) => {
-    setMode(m);
-    clearError();
-    setSampleError(null);
-  };
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     clearError();
-    setSampleError(null);
     setStage('loading');
-
-    let cfg: AuthConfig;
-    if (mode === 'sample') {
-      if (!sampleData?.tenant_id || !sampleData?.client_id) {
-        setSampleError('Pre-configured credentials are incomplete. Switch to Custom Authentication.');
-        setStage('config');
-        return;
-      }
-      cfg = { tenantId: sampleData.tenant_id, clientId: sampleData.client_id };
-      await login(cfg, false);
-    } else {
-      cfg = { tenantId: tenantId.trim(), clientId: clientId.trim() };
-      await login(cfg, true);
-    }
-
+    const cfg: AuthConfig = { tenantId: tenantId.trim(), clientId: clientId.trim() };
+    await login(cfg, false);
     setStage('config');
   };
 
-  const canSubmit =
-    stage !== 'loading' &&
-    (mode === 'sample'
-      ? !!sampleData?.tenant_id && !!sampleData?.client_id && !sampleError
-      : tenantId.trim().length > 0 && clientId.trim().length > 0);
-
-  const authError = error || sampleError;
+  const canSubmit = stage !== 'loading' && tenantId.trim().length > 0 && clientId.trim().length > 0;
 
   return (
     <div className="landing">
@@ -185,91 +127,40 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Auth config ──────────────────────────── */}
+      {/* ── Sign in ───────────────────────────────── */}
       {(stage === 'config' || stage === 'loading') && (
         <section className="auth-section" ref={configRef}>
           <div className="auth-card">
             <h2 className="auth-card-title">Sign in to FabOps</h2>
-            <p className="auth-card-sub">Choose how to authenticate with Microsoft Azure</p>
-
-            <div className="auth-tabs">
-              <button
-                type="button"
-                className={`auth-tab${mode === 'sample' ? ' active' : ''}`}
-                onClick={() => handleModeChange('sample')}
-              >
-                <span className="auth-tab-title">Sample</span>
-                <span className="auth-tab-desc">Use pre-configured Azure tenant</span>
-              </button>
-              <button
-                type="button"
-                className={`auth-tab${mode === 'custom' ? ' active' : ''}`}
-                onClick={() => handleModeChange('custom')}
-              >
-                <span className="auth-tab-title">Custom Authentication</span>
-                <span className="auth-tab-desc">Enter your own credentials</span>
-              </button>
-            </div>
+            <p className="auth-card-sub">Enter your Azure AD application credentials to continue</p>
 
             <form onSubmit={handleSubmit} className="auth-form">
-              {mode === 'sample' ? (
-                <div className="auth-sample">
-                  {sampleLoading && <p className="msg-hint">Loading configuration from Secret Manager…</p>}
-                  {sampleError && <p className="msg-error">{sampleError}</p>}
-                  {!sampleLoading && sampleData && (
-                    <>
-                      {sampleData.tenant_id ? (
-                        <div className="sample-info">
-                          <div className="sample-row">
-                            <span className="sample-label">Tenant ID</span>
-                            <code className="sample-val">{maskId(sampleData.tenant_id)}</code>
-                          </div>
-                          <div className="sample-row">
-                            <span className="sample-label">Client ID</span>
-                            <code className="sample-val">{maskId(sampleData.client_id)}</code>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="msg-hint">
-                          No pre-configured credentials found in Secret Manager.
-                          Switch to Custom Authentication to enter your own.
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="auth-custom">
-                  <div className="form-group">
-                    <label htmlFor="land-tenant">Azure Tenant ID</label>
-                    <input
-                      id="land-tenant"
-                      type="text"
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      value={tenantId}
-                      onChange={e => setTenantId(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="land-client">Azure Client ID</label>
-                    <input
-                      id="land-client"
-                      type="text"
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      value={clientId}
-                      onChange={e => setClientId(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <p className="msg-hint">
-                    These values will be saved to Google Secret Manager and used for sign-in.
-                    The Client Secret for Fabric API access can be configured in Settings after you log in.
-                  </p>
-                </div>
-              )}
+              <div className="form-group">
+                <label htmlFor="land-tenant">Azure Tenant ID</label>
+                <input
+                  id="land-tenant"
+                  type="text"
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  value={tenantId}
+                  onChange={e => setTenantId(e.target.value)}
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="land-client">Azure Client ID</label>
+                <input
+                  id="land-client"
+                  type="text"
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  value={clientId}
+                  onChange={e => setClientId(e.target.value)}
+                  autoComplete="off"
+                  required
+                />
+              </div>
 
-              {authError && <p className="msg-error">{authError}</p>}
+              {error && <p className="msg-error">{error}</p>}
 
               <button type="submit" className="btn-msft" disabled={!canSubmit}>
                 <svg viewBox="0 0 21 21" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
