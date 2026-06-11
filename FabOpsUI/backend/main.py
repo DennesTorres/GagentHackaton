@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import google.auth
+import google.auth.transport.requests
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -23,6 +25,20 @@ def read_secrets():
         "client_id": os.environ.get("AZURE_CLIENT_ID"),
         "client_secret_set": bool(os.environ.get("AZURE_CLIENT_SECRET")),
     }
+
+
+@app.get("/api/config")
+def read_config():
+    return {"agent_url": os.environ.get("FABOPS")}
+
+
+@app.get("/api/token")
+def get_token():
+    credentials, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    credentials.refresh(google.auth.transport.requests.Request())
+    return {"token": credentials.token}
 
 
 # ── Static files (React SPA) ──────────────────────────────────────────────────
