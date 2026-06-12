@@ -143,8 +143,11 @@ async def agent_proxy(request: Request):
                     unhandled.append(event)
                     continue
 
-                # Plain text output
+                handled = False
+
+                # Plain text output (some SDK versions use this key)
                 if "output" in event:
+                    handled = True
                     output = event["output"]
                     if isinstance(output, str) and output:
                         if not text_started:
@@ -152,21 +155,13 @@ async def agent_proxy(request: Request):
                             text_started = True
                         yield _sse({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": output})
 
-                # Tool / action calls
-                elif "actions" in event:
-                    for action in event.get("actions", []):
-                        if isinstance(action, dict):
-                            yield _sse({
-                                "type": "TOOL_CALL_START",
-                                "toolCallId": str(uuid.uuid4()),
-                                "toolCallName": action.get("tool", "unknown"),
-                            })
-
-                # ADK native event format
-                elif "content" in event:
+                # ADK native event format — checked independently because every ADK Event
+                # also carries an "actions" key (EventActions), which would shadow this
+                # branch if we used elif.
+                if "content" in event:
+                    handled = True
                     content = event["content"]
                     if isinstance(content, str):
-                        # content is plain text
                         if content:
                             if not text_started:
                                 yield _sse({"type": "TEXT_MESSAGE_START", "messageId": msg_id})
@@ -191,7 +186,7 @@ async def agent_proxy(request: Request):
                                     "toolCallName": fn_call.get("name", "unknown"),
                                 })
 
-                else:
+                if not handled:
                     unhandled.append(event)
 
             # ── End of stream ─────────────────────────────────────────────────
