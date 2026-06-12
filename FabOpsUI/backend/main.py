@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -15,6 +16,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _sse_error(message: str) -> str:
+    return f"data: {json.dumps({'type': 'RUN_ERROR', 'message': message})}\n\n"
 
 
 @app.get("/api/secrets")
@@ -37,35 +42,46 @@ async def agent_proxy(request: Request):
     if not agent_url:
         raise HTTPException(status_code=503, detail="FABOPS agent URL not configured")
 
-    import google.auth
-    import google.auth.transport.requests
-    credentials, _ = google.auth.default(
-        scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
-    credentials.refresh(google.auth.transport.requests.Request())
+    try:
+        import google.auth
+        import google.auth.transport.requests
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        credentials.refresh(google.auth.transport.requests.Request())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Google auth error: {exc}")
 
     body = await request.body()
     upstream_headers = {
         "Authorization": f"Bearer {credentials.token}",
         "Content-Type": request.headers.get("content-type", "application/json"),
-        # Tell the agent we want a streaming SSE response
         "Accept": "text/event-stream",
     }
 
     async def stream():
-        # async with guarantees cleanup even on client disconnect or exception
-        async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
-            async with client.stream(
-                "POST", agent_url, content=body, headers=upstream_headers
-            ) as response:
-                async for chunk in response.aiter_bytes():
-                    yield chunk
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
+                async with client.stream(
+                    "POST", agent_url, content=body, headers=upstream_headers
+                ) as response:
+                    if response.status_code >= 400:
+                        error_body = await response.aread()
+                        yield _sse_error(
+                            f"Upstream error {response.status_code}: "
+                            f"{error_body.decode(errors='replace')[:500]}"
+                        )
+                        return
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+        except Exception as exc:
+            yield _sse_error(f"Proxy error: {exc}")
 
     return StreamingResponse(
         stream(),
         media_type="text/event-stream",
         headers={
-            "X-Accel-Buffering": "no",   # disable nginx/Cloud Run proxy buffering
+            "X-Accel-Buffering": "no",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         },
