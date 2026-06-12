@@ -134,6 +134,24 @@ export default function ChatPage() {
           }]);
           setIsRunning(false);
         },
+        complete: () => {
+          // Stream closed without RUN_FINISHED (timeout, disconnect, etc.)
+          setCurrentStep(null);
+          setIsRunning(false);
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            // Only add a notice if no text was received at all
+            if (!last || last.role !== "assistant" || last.isToolCall) {
+              return [...prev, {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                content: "Stream ended without a response. The agent may have timed out — check Cloud Run logs.",
+                isStreaming: false,
+              }];
+            }
+            return prev;
+          });
+        },
       });
   };
 
