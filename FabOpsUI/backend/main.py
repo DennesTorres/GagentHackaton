@@ -1,8 +1,12 @@
 import asyncio
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("fabops")
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -159,6 +163,8 @@ async def agent_proxy(request: Request):
                         yield _sse_error(f"Failed to create Vertex session: {exc}")
                         return
 
+                logger.info("session resolved: vertex_session_id=%s thread_id=%s", vertex_session_id, thread_id)
+
                 # Send the session ID to the UI so it passes it back on the next turn
                 yield _sse({
                     "type": "STATE_SNAPSHOT",
@@ -196,6 +202,8 @@ async def agent_proxy(request: Request):
                             chunk = json.loads(data_str)
                         except json.JSONDecodeError:
                             continue
+
+                        logger.info("vertex chunk keys=%s snippet=%s", list(chunk.keys()) if isinstance(chunk, dict) else type(chunk).__name__, json.dumps(chunk)[:300])
 
                         # Case 1: double-encoded string
                         if isinstance(chunk, str):
