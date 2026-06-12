@@ -180,6 +180,25 @@ async def agent_proxy(request: Request):
                                     "toolCallName": tool_name,
                                 })
 
+                        # Case 4: ADK event format
+                        # {"author": "...", "content": {"parts": [{"text": "..."}], "role": "model"}}
+                        elif "content" in chunk:
+                            parts = chunk.get("content", {}).get("parts", [])
+                            for part in parts:
+                                text = part.get("text")
+                                if text:
+                                    if not text_started:
+                                        yield _sse({"type": "TEXT_MESSAGE_START", "messageId": msg_id})
+                                        text_started = True
+                                    yield _sse({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": text})
+                                fn_call = part.get("functionCall")
+                                if fn_call:
+                                    yield _sse({
+                                        "type": "TOOL_CALL_START",
+                                        "toolCallId": str(uuid.uuid4()),
+                                        "toolCallName": fn_call.get("name", "unknown"),
+                                    })
+
             # Finish the text message and signal run completion
             if text_started:
                 yield _sse({"type": "TEXT_MESSAGE_END", "messageId": msg_id})
