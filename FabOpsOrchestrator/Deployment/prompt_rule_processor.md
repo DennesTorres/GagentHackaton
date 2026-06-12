@@ -38,7 +38,7 @@ Example:
   ],
   "checks": [
     {
-      "property": "permissions.admins.count",
+      "property": "permissions.admins.groups.count",
       "operator": ">=",
       "value": 2
     }
@@ -152,6 +152,14 @@ Where FRL uses a name that is **not** a native Fabric property, it's drawn from 
   - **`contributors`** — principals with the Contributor role.
   - **`members`** — every principal with any role on the current object, regardless of which role.
   - **`viewers`** — principals with the Viewer (read-only) role.
+
+  **Principal-type qualifier.** A Fabric role assignment names a principal, and every principal has a type: User, Group (an Entra security group), or ServicePrincipal. Any role above can be narrowed by appending one of these to count only that type:
+  - **`.groups`** — only principals that are Entra security groups (principalType = Group).
+  - **`.users`** — only individual users (principalType = User).
+  - **`.serviceprincipals`** — only service principals (principalType = ServicePrincipal).
+
+  So `permissions.admins.count` is every Admin-role principal regardless of type, while `permissions.admins.groups.count` is only the Admin-role principals that are security groups. When a property carries a `.groups` (or `.users` / `.serviceprincipals`) qualifier, resolve the role assignments, keep ONLY the principals whose type matches the qualifier, then apply the calculated suffix to that filtered set. Do NOT include users or service principals when the qualifier is `.groups`. Read the principal type from the role assignment's `principalType` (or equivalent) field — never infer it from the display name. Example: for `permissions.admins.groups.count >= 2` on a workspace whose admins are 1 user + 3 security groups, `actual` is **3**, not 4 and not 1.
+
 - **`capacity`** — the Fabric capacity hosting the current object (meaningful at workspace level).
   - **`name`** — the capacity's display name.
   - **`sku`** — the capacity's SKU (e.g. `F2`, `F64`, `P1`).
