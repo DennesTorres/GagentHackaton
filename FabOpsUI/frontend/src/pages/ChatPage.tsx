@@ -51,7 +51,7 @@ export default function ChatPage() {
 
     setMessages(prev => [...prev, { id: userMsgId, role: "user", content: text, isStreaming: false }]);
 
-    const agent = new HttpAgent({ url: '/api/agent' });
+    const agent = new HttpAgent({ url: '/api/agent', fetch: window.fetch.bind(window) });
     let activeMsgId: string | null = null;
 
     agent
