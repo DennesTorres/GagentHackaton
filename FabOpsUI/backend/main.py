@@ -52,18 +52,23 @@ async def agent_proxy(request: Request):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Google auth error: {exc}")
 
-    body = await request.body()
+    # Vertex AI Agent Engine expects {"input": <ag-ui payload>}
+    raw_body = await request.body()
+    try:
+        vertex_body = json.dumps({"input": json.loads(raw_body)}).encode()
+    except json.JSONDecodeError:
+        vertex_body = raw_body
+
     upstream_headers = {
         "Authorization": f"Bearer {credentials.token}",
-        "Content-Type": request.headers.get("content-type", "application/json"),
-        "Accept": "text/event-stream",
+        "Content-Type": "application/json",
     }
 
     async def stream():
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
                 async with client.stream(
-                    "POST", agent_url, content=body, headers=upstream_headers
+                    "POST", agent_url, content=vertex_body, headers=upstream_headers
                 ) as response:
                     if response.status_code >= 400:
                         error_body = await response.aread()
