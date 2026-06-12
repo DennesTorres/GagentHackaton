@@ -7,6 +7,7 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   isStreaming: boolean;
+  isToolCall?: boolean;
 }
 
 export default function ChatPage() {
@@ -93,12 +94,15 @@ export default function ChatPage() {
             case EventType.TOOL_CALL_START: {
               const toolName = e.toolCallName as string || "tool";
               setCurrentStep(`Calling: ${toolName}`);
+              setMessages(prev => [...prev, {
+                id: e.toolCallId as string || crypto.randomUUID(),
+                role: "assistant",
+                content: `Calling tool: ${toolName}`,
+                isStreaming: false,
+                isToolCall: true,
+              }]);
               break;
             }
-
-            case EventType.TOOL_CALL_END:
-              setCurrentStep("Thinking…");
-              break;
 
             case EventType.RUN_FINISHED:
               setCurrentStep(null);
@@ -158,8 +162,8 @@ export default function ChatPage() {
           )}
 
           {messages.map(msg => (
-            <div key={msg.id} className={`message message-${msg.role}`}>
-              <div className="message-role">{msg.role === "user" ? "You" : "Agent"}</div>
+            <div key={msg.id} className={`message message-${msg.role}${msg.isToolCall ? " message-tool" : ""}`}>
+              <div className="message-role">{msg.role === "user" ? "You" : msg.isToolCall ? "Tool" : "Agent"}</div>
               <div className="message-content">
                 {msg.content}
                 {msg.isStreaming && <span className="cursor" />}
