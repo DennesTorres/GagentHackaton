@@ -85,6 +85,7 @@ async def agent_proxy(request: Request):
         "input": {
             "message": last_user_msg,
             "session_id": thread_id,
+            "user_id": thread_id,
             # also pass full history in case the agent uses it
             "messages": messages,
         },
