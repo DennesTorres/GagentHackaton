@@ -7,7 +7,6 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   isStreaming: boolean;
-  isToolCall?: boolean;
 }
 
 export default function ChatPage() {
@@ -16,6 +15,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
+  const [currentStep, setCurrentStep] = useState<string | null>(null);
   const threadIdRef = useRef(crypto.randomUUID());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -31,7 +31,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, currentStep]);
 
   const sendMessage = (e: FormEvent) => {
     e.preventDefault();
@@ -40,6 +40,7 @@ export default function ChatPage() {
 
     setInput("");
     setIsRunning(true);
+    setCurrentStep("Thinking…");
 
     const userMsgId = crypto.randomUUID();
     const history = [
@@ -68,6 +69,7 @@ export default function ChatPage() {
           switch (event.type) {
 
             case EventType.TEXT_MESSAGE_START:
+              setCurrentStep(null);
               activeMsgId = e.messageId as string;
               setMessages(prev => [...prev, { id: activeMsgId!, role: "assistant", content: "", isStreaming: true }]);
               break;
@@ -89,29 +91,23 @@ export default function ChatPage() {
             }
 
             case EventType.TOOL_CALL_START: {
-              const toolName = e.toolCallName as string || "unknown";
-              setMessages(prev => [...prev, {
-                id: e.toolCallId as string || crypto.randomUUID(),
-                role: "assistant",
-                content: `Calling tool: ${toolName}…`,
-                isStreaming: true,
-                isToolCall: true,
-              }]);
+              const toolName = e.toolCallName as string || "tool";
+              setCurrentStep(`Calling: ${toolName}`);
               break;
             }
 
             case EventType.TOOL_CALL_END:
-              setMessages(prev => prev.map(m =>
-                m.id === (e.toolCallId as string) ? { ...m, isStreaming: false } : m
-              ));
+              setCurrentStep("Thinking…");
               break;
 
             case EventType.RUN_FINISHED:
+              setCurrentStep(null);
               setIsRunning(false);
               break;
 
             case EventType.RUN_ERROR: {
               const errText = (e.message as string) || "Agent reported an error";
+              setCurrentStep(null);
               if (activeMsgId) {
                 setMessages(prev => prev.map(m =>
                   m.id === activeMsgId ? { ...m, content: errText, isStreaming: false } : m
@@ -125,6 +121,7 @@ export default function ChatPage() {
           }
         },
         error: (err: Error) => {
+          setCurrentStep(null);
           setMessages(prev => [...prev, {
             id: crypto.randomUUID(),
             role: "assistant",
@@ -138,6 +135,7 @@ export default function ChatPage() {
 
   const clearChat = () => {
     setMessages([]);
+    setCurrentStep(null);
     threadIdRef.current = crypto.randomUUID();
   };
 
@@ -152,7 +150,7 @@ export default function ChatPage() {
             </div>
           )}
 
-          {!configError && messages.length === 0 && (
+          {!configError && messages.length === 0 && !isRunning && (
             <div className="empty-state">
               <strong>Ready to evaluate</strong>
               Try: "every lakehouse in production must be assigned to a capacity" — or ask FabOps Copilot to list existing rules.
@@ -160,14 +158,26 @@ export default function ChatPage() {
           )}
 
           {messages.map(msg => (
-            <div key={msg.id} className={`message message-${msg.role}${msg.isToolCall ? " message-tool" : ""}`}>
-              <div className="message-role">{msg.role === "user" ? "You" : msg.isToolCall ? "Tool" : "Agent"}</div>
+            <div key={msg.id} className={`message message-${msg.role}`}>
+              <div className="message-role">{msg.role === "user" ? "You" : "Agent"}</div>
               <div className="message-content">
                 {msg.content}
                 {msg.isStreaming && <span className="cursor" />}
               </div>
             </div>
           ))}
+
+          {currentStep && (
+            <div className="message message-assistant">
+              <div className="message-role">Agent</div>
+              <div className="message-content thinking-bubble">
+                <span className="thinking-label">{currentStep}</span>
+                <span className="thinking-dots">
+                  <span /><span /><span />
+                </span>
+              </div>
+            </div>
+          )}
 
           <div ref={messagesEndRef} />
         </div>
