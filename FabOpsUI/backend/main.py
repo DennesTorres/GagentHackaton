@@ -73,15 +73,13 @@ async def agent_proxy(request: Request):
     run_id = ag_ui.get("runId", str(uuid.uuid4()))
 
     # ── Build Vertex AI Agent Engine request ──────────────────────────────────
-    # POST .../reasoningEngines/{id}:streamQuery?alt=sse
-    stream_url = base_url.rstrip("/")
-    if not stream_url.endswith(":streamQuery"):
-        stream_url += ":streamQuery"
-    if "?" not in stream_url:
-        stream_url += "?alt=sse"
-    elif "alt=" not in stream_url:
-        stream_url += "&alt=sse"
-
+    # Normalise to :streamQuery regardless of what suffix the env var has
+    stream_url = base_url.rstrip("/").split("?")[0]  # strip any existing query string
+    for suffix in (":streamQuery", ":query", ":stream"):
+        if stream_url.endswith(suffix):
+            stream_url = stream_url[: -len(suffix)]
+            break
+    stream_url += ":streamQuery?alt=sse"
     vertex_body = json.dumps({
         "class_method": "stream_query",
         "input": {
