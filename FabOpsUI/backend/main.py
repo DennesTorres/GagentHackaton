@@ -155,29 +155,41 @@ async def agent_proxy(request: Request):
                 # Tool / action calls
                 elif "actions" in event:
                     for action in event.get("actions", []):
-                        yield _sse({
-                            "type": "TOOL_CALL_START",
-                            "toolCallId": str(uuid.uuid4()),
-                            "toolCallName": action.get("tool", "unknown"),
-                        })
-
-                # ADK native event format
-                elif "content" in event:
-                    parts = event.get("content", {}).get("parts", [])
-                    for part in parts:
-                        text = part.get("text")
-                        if text:
-                            if not text_started:
-                                yield _sse({"type": "TEXT_MESSAGE_START", "messageId": msg_id})
-                                text_started = True
-                            yield _sse({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": text})
-                        fn_call = part.get("functionCall")
-                        if fn_call:
+                        if isinstance(action, dict):
                             yield _sse({
                                 "type": "TOOL_CALL_START",
                                 "toolCallId": str(uuid.uuid4()),
-                                "toolCallName": fn_call.get("name", "unknown"),
+                                "toolCallName": action.get("tool", "unknown"),
                             })
+
+                # ADK native event format
+                elif "content" in event:
+                    content = event["content"]
+                    if isinstance(content, str):
+                        # content is plain text
+                        if content:
+                            if not text_started:
+                                yield _sse({"type": "TEXT_MESSAGE_START", "messageId": msg_id})
+                                text_started = True
+                            yield _sse({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": content})
+                    elif isinstance(content, dict):
+                        parts = content.get("parts", [])
+                        for part in parts:
+                            if not isinstance(part, dict):
+                                continue
+                            text = part.get("text")
+                            if text and not part.get("thought"):
+                                if not text_started:
+                                    yield _sse({"type": "TEXT_MESSAGE_START", "messageId": msg_id})
+                                    text_started = True
+                                yield _sse({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": text})
+                            fn_call = part.get("functionCall")
+                            if fn_call and isinstance(fn_call, dict):
+                                yield _sse({
+                                    "type": "TOOL_CALL_START",
+                                    "toolCallId": str(uuid.uuid4()),
+                                    "toolCallName": fn_call.get("name", "unknown"),
+                                })
 
                 else:
                     unhandled.append(event)
