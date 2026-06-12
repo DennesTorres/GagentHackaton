@@ -100,6 +100,7 @@ async def agent_proxy(request: Request):
     async def stream():
         msg_id = str(uuid.uuid4())
         text_started = False
+        unhandled_chunks: list = []
 
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
@@ -182,7 +183,7 @@ async def agent_proxy(request: Request):
 
                         # Case 4: ADK event format
                         # {"author": "...", "content": {"parts": [{"text": "..."}], "role": "model"}}
-                        elif "content" in chunk:
+                        elif isinstance(chunk, dict) and "content" in chunk:
                             parts = chunk.get("content", {}).get("parts", [])
                             for part in parts:
                                 text = part.get("text")
@@ -199,9 +200,18 @@ async def agent_proxy(request: Request):
                                         "toolCallName": fn_call.get("name", "unknown"),
                                     })
 
+                        else:
+                            # Unrecognised chunk — record for diagnostics
+                            unhandled_chunks.append(chunk)
+
             # Finish the text message and signal run completion
             if text_started:
                 yield _sse({"type": "TEXT_MESSAGE_END", "messageId": msg_id})
+            elif unhandled_chunks:
+                # Nothing was rendered — surface the raw chunks so the user can see what arrived
+                sample = json.dumps(unhandled_chunks[:3], indent=2)[:800]
+                yield _sse_error(f"No output rendered. Unrecognised Vertex chunks:\n{sample}")
+                return
             yield _sse({"type": "RUN_FINISHED", "threadId": thread_id, "runId": run_id})
 
         except Exception as exc:
