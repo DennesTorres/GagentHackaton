@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import uuid
@@ -18,6 +19,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# In-process cache: thread_id → Vertex session_id
+# Survives within a Cloud Run instance; UI state provides the fallback across instances
+_SESSION_CACHE: dict[str, str] = {}
+
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
@@ -25,6 +30,49 @@ def _sse(event: dict) -> str:
 
 def _sse_error(message: str) -> str:
     return _sse({"type": "RUN_ERROR", "message": message})
+
+
+async def _ensure_vertex_session(
+    thread_id: str,
+    sessions_url: str,
+    headers: dict,
+    client: httpx.AsyncClient,
+) -> str:
+    """Return the Vertex session_id for this thread, creating it if needed."""
+    if thread_id in _SESSION_CACHE:
+        return _SESSION_CACHE[thread_id]
+
+    resp = await client.post(
+        sessions_url,
+        json={"userId": thread_id},
+        headers=headers,
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    name = data.get("name", "")
+
+    # Handle LRO: if the name contains /operations/, poll until done
+    if "/operations/" in name:
+        parts = name.split("/")
+        try:
+            location = parts[parts.index("locations") + 1]
+        except (ValueError, IndexError):
+            location = "us-central1"
+        op_url = f"https://{location}-aiplatform.googleapis.com/v1beta1/{name}"
+        for _ in range(30):
+            await asyncio.sleep(1)
+            op_resp = await client.get(op_url, headers=headers)
+            op_data = op_resp.json()
+            if op_data.get("done"):
+                name = op_data.get("response", {}).get("name", "")
+                break
+
+    # Session name: .../reasoningEngines/{engine}/sessions/{session_id}
+    session_id = name.rsplit("/", 1)[-1]
+    if session_id:
+        _SESSION_CACHE[thread_id] = session_id
+    return session_id
 
 
 @app.get("/api/secrets")
@@ -71,30 +119,24 @@ async def agent_proxy(request: Request):
     )
     thread_id = ag_ui.get("threadId", str(uuid.uuid4()))
     run_id = ag_ui.get("runId", str(uuid.uuid4()))
+    # The UI returns the Vertex session ID it received from STATE_SNAPSHOT
+    agent_state = ag_ui.get("state") or {}
 
-    # ── Build Vertex AI Agent Engine request ──────────────────────────────────
-    # Normalise to :streamQuery regardless of what suffix the env var has
-    stream_url = base_url.rstrip("/").split("?")[0]  # strip any existing query string
+    # ── Build URLs ────────────────────────────────────────────────────────────
+    engine_base = base_url.rstrip("/").split("?")[0]
     for suffix in (":streamQuery", ":query", ":stream"):
-        if stream_url.endswith(suffix):
-            stream_url = stream_url[: -len(suffix)]
+        if engine_base.endswith(suffix):
+            engine_base = engine_base[: -len(suffix)]
             break
-    stream_url += ":streamQuery?alt=sse"
-    vertex_body = json.dumps({
-        "class_method": "stream_query",
-        "input": {
-            "message": last_user_msg,
-            "session_id": thread_id,
-            "user_id": thread_id,
-        },
-    }).encode()
+    stream_url = engine_base + ":streamQuery?alt=sse"
+    sessions_url = engine_base + "/sessions"
 
     upstream_headers = {
         "Authorization": f"Bearer {credentials.token}",
         "Content-Type": "application/json",
     }
 
-    # ── Stream: translate Vertex AI SSE → AG-UI SSE ───────────────────────────
+    # ── Stream: manage session, then translate Vertex SSE → AG-UI SSE ─────────
     async def stream():
         msg_id = str(uuid.uuid4())
         text_started = False
@@ -102,6 +144,36 @@ async def agent_proxy(request: Request):
 
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
+
+                # Resolve Vertex session ID — from UI state, in-process cache, or create new
+                vertex_session_id = agent_state.get("vertexSessionId")
+                if vertex_session_id:
+                    # UI returned a known session; warm the cache
+                    _SESSION_CACHE[thread_id] = vertex_session_id
+                else:
+                    try:
+                        vertex_session_id = await _ensure_vertex_session(
+                            thread_id, sessions_url, upstream_headers, client
+                        )
+                    except Exception as exc:
+                        yield _sse_error(f"Failed to create Vertex session: {exc}")
+                        return
+
+                # Send the session ID to the UI so it passes it back on the next turn
+                yield _sse({
+                    "type": "STATE_SNAPSHOT",
+                    "snapshot": {"vertexSessionId": vertex_session_id},
+                })
+
+                vertex_body = json.dumps({
+                    "class_method": "stream_query",
+                    "input": {
+                        "message": last_user_msg,
+                        "session_id": vertex_session_id,
+                        "user_id": thread_id,
+                    },
+                }).encode()
+
                 async with client.stream(
                     "POST", stream_url, content=vertex_body, headers=upstream_headers
                 ) as response:
@@ -120,17 +192,14 @@ async def agent_proxy(request: Request):
                         if not data_str or data_str == "[DONE]":
                             continue
 
-                        # ── Try to parse the SSE data payload ─────────────
                         try:
                             chunk = json.loads(data_str)
                         except json.JSONDecodeError:
                             continue
 
-                        # Case 1: chunk is a JSON string — Vertex double-encoded
-                        # an inner SSE line (e.g. the agent emitted AG-UI events)
+                        # Case 1: double-encoded string
                         if isinstance(chunk, str):
                             inner = chunk
-                            # Strip leading "data: " if present
                             if inner.startswith("data:"):
                                 inner = inner[5:].strip()
                             try:
@@ -144,11 +213,10 @@ async def agent_proxy(request: Request):
                                 pass
                             continue
 
-                        # Case 2: chunk is a dict with an "output" key
+                        # Case 2: "output" key
                         if "output" in chunk:
                             output = chunk["output"]
                             if isinstance(output, str):
-                                # Could be a JSON-encoded AG-UI event
                                 try:
                                     inner_event = json.loads(output)
                                     if isinstance(inner_event, dict) and "type" in inner_event:
@@ -158,13 +226,11 @@ async def agent_proxy(request: Request):
                                         continue
                                 except (json.JSONDecodeError, TypeError):
                                     pass
-                                # Plain text — emit as text message
                                 if not text_started:
                                     yield _sse({"type": "TEXT_MESSAGE_START", "messageId": msg_id})
                                     text_started = True
                                 yield _sse({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": output})
                             elif isinstance(output, dict) and "type" in output:
-                                # Already an AG-UI event dict
                                 yield _sse(output)
                                 if output.get("type") == "RUN_FINISHED":
                                     return
@@ -179,7 +245,7 @@ async def agent_proxy(request: Request):
                                     "toolCallName": tool_name,
                                 })
 
-                        # Case 4: ADK event format
+                        # Case 4: ADK native format
                         # {"author": "...", "content": {"parts": [{"text": "..."}], "role": "model"}}
                         elif isinstance(chunk, dict) and "content" in chunk:
                             parts = chunk.get("content", {}).get("parts", [])
@@ -199,14 +265,11 @@ async def agent_proxy(request: Request):
                                     })
 
                         else:
-                            # Unrecognised chunk — record for diagnostics
                             unhandled_chunks.append(chunk)
 
-            # Finish the text message and signal run completion
             if text_started:
                 yield _sse({"type": "TEXT_MESSAGE_END", "messageId": msg_id})
             elif unhandled_chunks:
-                # Nothing was rendered — surface the raw chunks so the user can see what arrived
                 sample = json.dumps(unhandled_chunks[:3], indent=2)[:800]
                 yield _sse_error(f"No output rendered. Unrecognised Vertex chunks:\n{sample}")
                 return

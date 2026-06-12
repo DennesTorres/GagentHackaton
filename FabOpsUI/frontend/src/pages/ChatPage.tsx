@@ -10,6 +10,10 @@ interface ChatMessage {
   isToolCall?: boolean;
 }
 
+interface AgentState {
+  vertexSessionId?: string;
+}
+
 export default function ChatPage() {
   const [ready, setReady] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -18,6 +22,7 @@ export default function ChatPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const threadIdRef = useRef(crypto.randomUUID());
+  const agentStateRef = useRef<AgentState | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,7 +66,7 @@ export default function ChatPage() {
         messages: history,
         tools: [],
         context: [],
-        state: null,
+        state: agentStateRef.current,
       })
       .subscribe({
         next: (event) => {
@@ -122,6 +127,15 @@ export default function ChatPage() {
               setIsRunning(false);
               break;
             }
+
+            case EventType.STATE_SNAPSHOT: {
+              // Backend sends the Vertex session ID; store it so we return it next turn
+              const snapshot = e.snapshot as AgentState | undefined;
+              if (snapshot?.vertexSessionId) {
+                agentStateRef.current = { vertexSessionId: snapshot.vertexSessionId };
+              }
+              break;
+            }
           }
         },
         error: (err: Error) => {
@@ -135,12 +149,10 @@ export default function ChatPage() {
           setIsRunning(false);
         },
         complete: () => {
-          // Stream closed without RUN_FINISHED (timeout, disconnect, etc.)
           setCurrentStep(null);
           setIsRunning(false);
           setMessages(prev => {
             const last = prev[prev.length - 1];
-            // Only add a notice if no text was received at all
             if (!last || last.role !== "assistant" || last.isToolCall) {
               return [...prev, {
                 id: crypto.randomUUID(),
@@ -159,6 +171,7 @@ export default function ChatPage() {
     setMessages([]);
     setCurrentStep(null);
     threadIdRef.current = crypto.randomUUID();
+    agentStateRef.current = null;
   };
 
   return (
