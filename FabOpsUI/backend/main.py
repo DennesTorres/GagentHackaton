@@ -112,9 +112,8 @@ async def agent_proxy(request: Request):
             else:
                 # Create a new session via the SDK
                 try:
-                    session = agent.create_session(user_id=thread_id)
-                    name = session.get("name", "") if isinstance(session, dict) else getattr(session, "name", "")
-                    vertex_session_id = name.rsplit("/", 1)[-1]
+                    session = await agent.async_create_session(user_id=thread_id)
+                    vertex_session_id = session["id"]
                     _SESSION_CACHE[thread_id] = vertex_session_id
                     logger.info("created session %s for thread %s", vertex_session_id, thread_id)
                 except Exception as exc:
