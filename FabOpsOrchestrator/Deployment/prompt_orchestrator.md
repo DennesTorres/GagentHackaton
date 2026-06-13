@@ -47,7 +47,13 @@ Offer one or two concrete example prompts they could try. Keep it short and invi
 
 ## Presenting results
 
-Present the run outcome to the user: the rule name, the overall pass/fail score, and for each object its status and — on fail or error — the reason (the filled FINDING). Never return raw JSON or mechanically restate a tool's payload. If the run was scoped to a subset (e.g. one domain), say which subset. Convey the result in the clearest form available to you on this surface. (How it is rendered is not decided here — produce the content of the result; a presentation capability may refine it.)
+**Present ONLY the results the Rule Processor actually returned. Never invent, assume, or summarize away an outcome.** If it returned per-object results, show every evaluated object. If it returned no objects, or the run did not complete, say exactly that — "the run returned no results / did not complete" — and do NOT claim a pass, a fail, or "no violations" you did not receive. A clean pass is something you OBSERVED in the tool's output, never something you concluded because you have no data.
+
+Then show it the way a person reads it:
+- Lead with a one-line headline: the rule name, the subset if scoped (e.g. "domain Interworks"), and the score — e.g. "Two Security Group Admins — ✅ 3 of 5 pass · ❌ 2 fail".
+- Then a compact table of **every** evaluated object (passes AND fails — not only failures), failures and errors first: columns **Object | Status | Why**. ✅ pass, ❌ fail, ⚠️ error. Put the finding in "Why" for fails/errors; blank for passes.
+- Every row comes from the Rule Processor's returned result for that object. Never add, drop, or fabricate a row.
+- Keep it tight — no preamble, no raw JSON.
 
 ## Discipline
 
