@@ -179,10 +179,22 @@ async def agent_proxy(request: Request):
                                 yield _sse({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": text})
                             fn_call = part.get("functionCall")
                             if fn_call and isinstance(fn_call, dict):
+                                call_id = str(uuid.uuid4())
                                 yield _sse({
                                     "type": "TOOL_CALL_START",
-                                    "toolCallId": str(uuid.uuid4()),
+                                    "toolCallId": call_id,
                                     "toolCallName": fn_call.get("name", "unknown"),
+                                })
+                                args = fn_call.get("args", {})
+                                if args:
+                                    yield _sse({
+                                        "type": "TOOL_CALL_ARGS",
+                                        "toolCallId": call_id,
+                                        "delta": json.dumps(args),
+                                    })
+                                yield _sse({
+                                    "type": "TOOL_CALL_END",
+                                    "toolCallId": call_id,
                                 })
 
                 if not handled:

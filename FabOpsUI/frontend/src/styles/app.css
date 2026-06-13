@@ -958,6 +958,269 @@ body { background: var(--bg); }
   font-style: italic;
 }
 
+/* ─── Render components (agent tool-call visuals) ───────────────────────── */
+
+/* Container for a render_* tool call — no bubble chrome, full width */
+.render-message {
+  align-self: stretch;
+  max-width: 100%;
+}
+
+.render-loading {
+  padding: 8px 0;
+}
+
+/* ── Shared: legend (donut + pie) ── */
+.render-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+}
+.render-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.render-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.render-legend-label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text);
+}
+.render-legend-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+/* ── render_table ── */
+.render-table {
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  font-size: 13px;
+}
+.render-table-title {
+  padding: 10px 14px 8px;
+  font-weight: 700;
+  color: var(--text-bright);
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.render-table-grid {
+  width: 100%;
+  border-collapse: collapse;
+}
+.render-table-grid th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+.render-table-grid td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+.render-table-grid tr:last-child td { border-bottom: none; }
+/* Row colouring when emphasizeStatus is true */
+.render-table-grid tr.row-fail  { background: rgba(248,113,113,.06); }
+.render-table-grid tr.row-error { background: rgba(251,191, 36,.06); }
+.render-table-grid tr.row-pass  { background: rgba( 16,185,129,.04); }
+/* Status cell text colour */
+.render-status-pass  { color: var(--success); font-size: 12px; font-weight: 600; }
+.render-status-fail  { color: var(--error);   font-size: 12px; font-weight: 600; }
+.render-status-error { color: var(--warning); font-size: 12px; font-weight: 600; }
+.render-status-info  { color: var(--accent);  font-size: 12px; font-weight: 600; }
+
+/* ── render_donut ── */
+.render-donut {
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+}
+.render-donut-body {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+/* ── render_chart ── */
+.render-chart {
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+.render-chart-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+/* Pie variant reuses donut-body layout */
+.render-chart-pie {
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* ── render_card ── */
+.render-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.render-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.render-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+.render-card-subtitle {
+  font-size: 12px;
+  color: var(--muted-light);
+  margin-top: 2px;
+}
+.render-card-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.render-card-field {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.render-card-field:last-child { border-bottom: none; }
+.render-card-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted-light);
+  width: 110px;
+  flex-shrink: 0;
+}
+.render-card-field-value {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-word;
+}
+.render-card-body {
+  font-size: 13px;
+  color: var(--muted-light);
+  line-height: 1.6;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── render_badge ── */
+.render-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.render-badge-pass    { background: var(--success-bg);           color: var(--success); }
+.render-badge-fail    { background: var(--error-bg);             color: var(--error);   }
+.render-badge-error   { background: rgba(251,191, 36,.12);       color: var(--warning); }
+.render-badge-info    { background: var(--accent-glow);          color: var(--accent);  }
+.render-badge-neutral { background: rgba( 61, 82,114,.25);       color: var(--muted-light); }
+
+/* ── render_code ── */
+.render-code {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  font-size: 13px;
+}
+.render-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+.render-code-lang {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--primary-light);
+}
+.render-code-copy {
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-light);
+  cursor: pointer;
+  transition: border-color .12s, color .12s;
+}
+.render-code-copy:hover { border-color: var(--primary); color: var(--primary-light); }
+.render-code-body {
+  margin: 0;
+  padding: 16px;
+  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #94a3b8;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ── chat-actions (clear button row) ── */
+.chat-actions {
+  padding: 8px 20px 12px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
 /* ─── Responsive ─────────────────────────────── */
 @media (max-width: 900px) {
   .hero-inner {
