@@ -9,7 +9,7 @@ const SKILL_INSTRUCTION =
   "Whenever you would present / show / display / list / summarize structured " +
   "data to the user — a rule, a list of rules, a run's per-object results, " +
   "counts or ratios — do it by calling one of the render tools (render_table, " +
-  "render_donut, render_chart, render_card, render_badge, render_code), " +
+  "render_donut, render_chart, render_card, render_badge, render_code, render_kpi), " +
   "shaping the data to that tool's input. Do not produce a markdown table, " +
   "bullets, or raw JSON for structured results while these tools are available " +
   "— render them. Free-form prose, a short answer, or a question stays plain text. " +
@@ -170,6 +170,39 @@ const RENDER_TOOLS = [
         copyable: { type: "boolean" },
       },
       required: ["code"],
+    },
+  },
+  {
+    name: "render_kpi",
+    description:
+      "Use to surface headline numbers as visual tiles: a single key metric or a small set " +
+      "of related counts (up to ~5) where the value itself is the point and colour signals " +
+      "significance — pass (green), fail (red), error (amber), info (cyan), highlight " +
+      "(indigo), or neutral (no colour). Examples: total items evaluated, passed, failed, " +
+      "errored counts from a compliance run; number of rules in the catalog; a single " +
+      "percentage score. Prefer this over a table when there are few numbers and no " +
+      "per-item breakdown is needed.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              label:    { type: "string" },
+              value:    { type: "string" },
+              sublabel: { type: "string" },
+              tone: {
+                type: "string",
+                enum: ["pass", "fail", "error", "info", "highlight", "neutral"],
+              },
+            },
+            required: ["label", "value"],
+          },
+        },
+      },
+      required: ["items"],
     },
   },
 ];
@@ -519,6 +552,24 @@ function RenderCode({ code = "", language = "frl", title, copyable = true }: {
   );
 }
 
+// ── render_kpi ─────────────────────────────────────────────────────────────────
+
+function RenderKpi({ items = [] }: {
+  items?: { label: string; value: string; sublabel?: string; tone?: string }[];
+}) {
+  return (
+    <div className="render-kpi">
+      {items.map((item, i) => (
+        <div key={i} className={`render-kpi-tile render-kpi-tile-${item.tone ?? "neutral"}`}>
+          <div className="render-kpi-value">{item.value}</div>
+          <div className="render-kpi-label">{item.label}</div>
+          {item.sublabel && <div className="render-kpi-sublabel">{item.sublabel}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Message model ──────────────────────────────────────────────────────────────
 
 interface ChatMessage {
@@ -747,6 +798,7 @@ export default function ChatPage() {
       case "render_card":   return <RenderCard   {...args} />;
       case "render_badge":  return <RenderBadge  {...args} />;
       case "render_code":   return <RenderCode   {...args} />;
+      case "render_kpi":    return <RenderKpi    {...args} />;
       default: return null;
     }
   };
