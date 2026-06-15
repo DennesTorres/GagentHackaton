@@ -23,10 +23,10 @@ const RENDER_TOOLS = [
   {
     name: "render_table",
     description:
-      "Display a set of records sharing columns (rule lists, per-object run results). " +
-      "columns defines the header [{key, label, align?}]. rows is an array of objects " +
-      "keyed to columns[].key. Set _status on each row ('pass'|'fail'|'error'|'info') " +
-      "and emphasizeStatus:true to colour rows and sort fails/errors first.",
+      "Use when the answer is a set of items to compare side by side: per-item " +
+      "compliance-scan results (each Fabric item — workspace, lakehouse, semantic model, " +
+      "capacity, pipeline — with pass/fail/error and the reason), the rule catalog, or a " +
+      "rule's version history.",
     parameters: {
       type: "object" as const,
       properties: {
@@ -56,8 +56,8 @@ const RENDER_TOOLS = [
   {
     name: "render_donut",
     description:
-      "Display a donut chart for part-of-a-whole breakdowns — pass/fail/error ratios. " +
-      "segments: [{label, value, tone?}] where tone is pass|fail|error|neutral.",
+      "Use to show, at a glance, how a single compliance run split across passed / failed / " +
+      "errored — the proportion of items in each outcome; the 'how compliant are we' headline.",
     parameters: {
       type: "object" as const,
       properties: {
@@ -82,8 +82,9 @@ const RENDER_TOOLS = [
   {
     name: "render_chart",
     description:
-      "Display a bar, line, or pie chart. type must be 'bar'|'line'|'pie'. " +
-      "series: [{name, points:[{x, y}]}]. x values are strings, y values are numbers.",
+      "Use to compare quantities across categories (violations by severity, failing items per " +
+      "workspace, rules per domain) or change over time (compliance rate week over week, new " +
+      "violations across a release).",
     parameters: {
       type: "object" as const,
       properties: {
@@ -116,9 +117,9 @@ const RENDER_TOOLS = [
   {
     name: "render_card",
     description:
-      "Display one entity's key facts. title is required. " +
-      "fields: [{label, value}] for structured properties. " +
-      "status adds a coloured badge ('pass'|'fail'|'error'|'info'). body for free text.",
+      "Use to spotlight one subject with a verdict and a few facts: a completed run's summary, " +
+      "a rule-saved confirmation, or one rule's identity (name, severity, version, " +
+      "current/superseded).",
     parameters: {
       type: "object" as const,
       properties: {
@@ -143,7 +144,9 @@ const RENDER_TOOLS = [
   },
   {
     name: "render_badge",
-    description: "Display a single status or label pill.",
+    description:
+      "Use for a single short status read inline: a rule's lifecycle state " +
+      "(current/superseded), its severity, or one pass / fail / error verdict.",
     parameters: {
       type: "object" as const,
       properties: {
@@ -156,9 +159,8 @@ const RENDER_TOOLS = [
   {
     name: "render_code",
     description:
-      "Display a code block with syntax highlighting and a copy button. " +
-      "Pass raw code only — never wrapped in markdown fences. " +
-      "language e.g. 'frl', 'sql', 'json'. copyable defaults to true.",
+      "Use to show the exact rule definition in Fabric Rule Language (FRL), or a structured " +
+      "spec — above all, a rule's proposed FRL before the user approves saving it.",
     parameters: {
       type: "object" as const,
       properties: {
