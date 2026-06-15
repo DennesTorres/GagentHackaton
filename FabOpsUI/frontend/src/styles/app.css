@@ -383,6 +383,7 @@ body { background: var(--bg); }
   border-top: 1px solid var(--border);
   background: var(--bg-surface);
   flex-shrink: 0;
+  width: 100%;
 }
 .input-bar input {
   flex: 1;
